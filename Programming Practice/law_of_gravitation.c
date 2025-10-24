@@ -2,13 +2,21 @@
 #include <math.h>
 #include <stdbool.h>
 
+#define MINUTE 60
+#define HOUR MINUTE * 60
+#define DAY HOUR * 24
+#define WEEK DAY * 7
+
 const double GRAVITATIONAL_CONSTANT = 6.67430e-11;
+
+// every minute
+const double DELTA_TIME = MINUTE;
 
 typedef struct
 {
-    float x;
-    float y;
-    float z;
+    double x;
+    double y;
+    double z;
 
 } Vec3;
 
@@ -31,6 +39,12 @@ double distance(Object, Object);
 double gravitational_force(Object, Object);
 Vec3 gravitational_force_vector(Object, Object);
 
+// updates an object's velocity based on the forces acting on it
+void update_velocity(Object*, Vec3);
+
+// updates an object's position based on it's velocity
+void update_position(Object*);
+void display_position(Object);
 
 int main()
 {
@@ -67,10 +81,36 @@ int main()
     printf("\nx-axis: %e", force.x);
     printf("\ny-axis: %e", force.y);
     printf("\nz-axis: %e", force.z);
-    while (tick < 100)
+
+/*
+
+
+ for (int i = 0; i < ((WEEK*4) / DELTA_TIME); i++)
     {
-        tick++;
+
+        // display results every hour
+        if (i % 60 == 0)
+        {
+            printf("\nDay %d, Hour %d:", (i / 60) /24, (i / 60) % 24);
+            display_position(objects[1]);
+        }
+
+        update_position(&objects[0]);
+        update_position(&objects[1]);
+
+        force = gravitational_force_vector(objects[0], objects[1]);
+        update_velocity(&objects[0], force);
+
+        force = gravitational_force_vector(objects[1], objects[0]);
+        update_velocity(&objects[1], force);
     }
+
+
+
+
+
+*/
+   
     
 
 
@@ -108,3 +148,32 @@ Vec3 gravitational_force_vector(Object object1, Object object2) {
 
     return force;
 }
+
+
+void update_velocity(Object *object, Vec3 force)
+{
+    Vec3 acceleration;
+    acceleration.x = force.x / object->mass;
+    acceleration.y = force.y / object->mass;
+    acceleration.z = force.z / object->mass;
+
+    object->motion.velocity.x += acceleration.x * DELTA_TIME;
+    object->motion.velocity.y += acceleration.y * DELTA_TIME;
+    object->motion.velocity.z += acceleration.z * DELTA_TIME;
+};
+
+void update_position(Object *object)
+{
+    object->motion.position.x += object->motion.velocity.x * DELTA_TIME;
+    object->motion.position.y += object->motion.velocity.y * DELTA_TIME;
+    object->motion.position.z += object->motion.velocity.z * DELTA_TIME;
+
+};
+
+void display_position(Object object)
+{
+    printf("\nx-coordinate: %e", object.motion.position.x);
+    printf("\ny-coordinate: %e", object.motion.position.y);
+    printf("\nz-coordinate: %e\n", object.motion.position.z);
+
+};
