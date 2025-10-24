@@ -46,11 +46,14 @@ void update_velocity(Object*, Vec3);
 void update_position(Object*);
 void display_position(Object);
 
+void update(Object *object, Vec3 force);
+
 int main()
 {
-    float tick = 1;
     Object objects[2];
-
+    Vec3 force1;
+    Vec3 force2;
+    
     // Earth
     objects[0].mass = 5.972e24;  // kg
     objects[0].motion.position = (Vec3){0.0f, 0.0f, 0.0f};
@@ -82,8 +85,6 @@ int main()
     printf("\ny-axis: %e", force.y);
     printf("\nz-axis: %e", force.z);
 
-/*
-
 
  for (int i = 0; i < ((WEEK*4) / DELTA_TIME); i++)
     {
@@ -95,25 +96,14 @@ int main()
             display_position(objects[1]);
         }
 
-        update_position(&objects[0]);
-        update_position(&objects[1]);
+        force1 = gravitational_force_vector(objects[0], objects[1]);
+        force2 = gravitational_force_vector(objects[1], objects[0]);
 
-        force = gravitational_force_vector(objects[0], objects[1]);
-        update_velocity(&objects[0], force);
-
-        force = gravitational_force_vector(objects[1], objects[0]);
-        update_velocity(&objects[1], force);
+        update(&objects[0], force1);
+        update(&objects[1], force2);
     }
-
-
-
-
-
-*/
    
     
-
-
     return 0;
 }
 
@@ -149,26 +139,23 @@ Vec3 gravitational_force_vector(Object object1, Object object2) {
     return force;
 }
 
-
-void update_velocity(Object *object, Vec3 force)
-{
-    Vec3 acceleration;
-    acceleration.x = force.x / object->mass;
-    acceleration.y = force.y / object->mass;
-    acceleration.z = force.z / object->mass;
-
+void update(Object *object, Vec3 force) {
+    Vec3 acceleration = {
+        force.x / object->mass,
+        force.y / object->mass,
+        force.z / object->mass
+    };
     object->motion.velocity.x += acceleration.x * DELTA_TIME;
     object->motion.velocity.y += acceleration.y * DELTA_TIME;
     object->motion.velocity.z += acceleration.z * DELTA_TIME;
-};
 
-void update_position(Object *object)
-{
     object->motion.position.x += object->motion.velocity.x * DELTA_TIME;
     object->motion.position.y += object->motion.velocity.y * DELTA_TIME;
     object->motion.position.z += object->motion.velocity.z * DELTA_TIME;
+}
 
-};
+
+
 
 void display_position(Object object)
 {
