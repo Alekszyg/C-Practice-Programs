@@ -2,10 +2,16 @@
 #include <math.h>
 #include <stdbool.h>
 
-#define MINUTE 60
-#define HOUR MINUTE * 60
-#define DAY HOUR * 24
-#define WEEK DAY * 7
+#define MINUTE (60)
+#define HOUR (MINUTE * 60)
+#define DAY (HOUR * 24)
+#define WEEK (DAY * 7)
+
+// update simulation every minute
+#define DELTA_TIME (MINUTE)
+
+// the timescale of the simulation
+#define TIME_SCALE (WEEK * 4)
 
 // distance from middle of render to the edge of render in metres
 #define RENDER_SIZE 400000000 // 400 million
@@ -17,9 +23,6 @@
 #define NO_OBJECTS 2
 
 const double GRAVITATIONAL_CONSTANT = 6.67430e-11;
-
-// update every minute
-const double DELTA_TIME = MINUTE;
 
 // enum for plane axes
 enum Planes {XY, YZ, ZX};
@@ -57,13 +60,21 @@ void display_position(Object);
 
 // updates an objects velocity and position based on the force acting on it
 void update(Object *object);
+
+// update all the objects velocity and position based on the forces acting on them
 void update_N(Object[]);
+
+// updates the log, a record of all the objects variables over time
+void update_log(Object[][NO_OBJECTS], Object[], int time);
 
 void render_objects(Object[], int ,float);
 
 int main()
 {
     Object objects[NO_OBJECTS];
+
+    // keeps log of object attributes every hour
+    Object simulation_log[TIME_SCALE / HOUR][NO_OBJECTS];
     
     // Earth
     objects[0].mass = 5.972e24;  // kg
@@ -86,16 +97,19 @@ int main()
     objects[2].motion.velocity = (Vec3){0.0f, -1022.0f, 0.0f};        // m/s (orbital speed)
     objects[2].motion.force = (Vec3){0.0f, 0.0f, 0.0f};        // m/s (orbital speed)
     
-    for (int i = 0; i < ((WEEK*4) / DELTA_TIME); i++)
+    for (int i = 0; i < (TIME_SCALE / DELTA_TIME); i++)
     {
+        //update_log(simulation_log, objects, i);
 
         // render every day
-        if (i % (DAY / (int)DELTA_TIME) == 0)
+        if (i % (DAY / DELTA_TIME) == 0)
         {
-            printf("\nDay %d\n", (i / (DAY / (int)DELTA_TIME)));
+            printf("\nDay %d\n", (i / (DAY / DELTA_TIME)));
+            //update_log(simulation_log, objects, (int)(i / (DAY / (int)DELTA_TIME)));
             render_objects(objects, XY, 1);
         }
-        
+
+
         apply_gravitational_forces_N(objects);
         update_N(objects);
     }
@@ -246,4 +260,14 @@ void render_objects(Object objects[], int plane, float zoom)
     }
 
 
+}
+
+
+void update_log(Object sim_log[][NO_OBJECTS], Object objects[], int time)
+{
+    for (int i = 0; i < NO_OBJECTS; i++)
+    {
+        //sim_log[time][i].mass = objects[i].mass;
+        sim_log[time][i].motion = objects[i].motion;
+    }
 }
