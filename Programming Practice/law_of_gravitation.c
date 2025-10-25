@@ -7,13 +7,18 @@
 #define DAY HOUR * 24
 #define WEEK DAY * 7
 
-// distance from middle of render to end
-#define RENDER_SIZE 500000000
+// distance from middle of render to the edge of render in metres
+#define RENDER_SIZE 400000000 // 400 million
+
+// pixel ratio for square grid
+#define NO_PIXELSX 17 // 17
+#define NO_PIXELSY 21 // 21
+
 #define NO_OBJECTS 2
 
 const double GRAVITATIONAL_CONSTANT = 6.67430e-11;
 
-// every minute
+// update every minute
 const double DELTA_TIME = MINUTE;
 
 typedef struct
@@ -28,104 +33,68 @@ typedef struct
 {
     Vec3 position;
     Vec3 velocity;
+    Vec3 force;
 } Motion;
 
 typedef struct
 {
     double mass;
     Motion motion;
+    char symbol;
 
 } Object;
 
 // calculates distance between two objects
 double distance(Object, Object);
 
-double gravitational_force(Object, Object);
-Vec3 gravitational_force_vector(Object, Object);
+void apply_gravitational_forces(Object*, Object*);
+void apply_gravitational_forces_N(Object[]);
 
 void display_position(Object);
 
 // updates an objects velocity and position based on the force acting on it
-void update(Object *object, Vec3 force);
+void update(Object *object);
+void update_N(Object[]);
 
-void render_objects(Object[]);
+void render_objects(Object[], float);
 
 int main()
 {
     Object objects[NO_OBJECTS];
-    Vec3 force1;
-    Vec3 force2;
     
     // Earth
     objects[0].mass = 5.972e24;  // kg
     objects[0].motion.position = (Vec3){0.0f, 0.0f, 0.0f};
     objects[0].motion.velocity = (Vec3){0.0f, 0.0f, 0.0f};
+    objects[0].motion.force = (Vec3){0.0f, 0.0f, 0.0f};
+    objects[0].symbol = 'E';
 
     // Moon
     objects[1].mass = 7.348e22;  // kg
     objects[1].motion.position = (Vec3){384400000.0f, 0.0f, 0.0f};  // meters from Earth
     objects[1].motion.velocity = (Vec3){0.0f, 1022.0f, 0.0f};        // m/s (orbital speed)
+    objects[1].motion.force = (Vec3){0.0f, 0.0f, 0.0f};        // m/s (orbital speed)
+    // moon orbital speed 1022.0f
+    objects[1].symbol = 'M';
 
-
-
-    //render_objects(objects);
-
-    /*
-    printf("The distance between object 1 and object 2 is: %f\n", distance(objects[0], objects[1]));
-    printf("The gravitation force between object 1 and object 2 is: %e", gravitational_force(objects[0], objects[1]));
-
-    Vec3 force = gravitational_force_vector(objects[0], objects[1]);
-
-
+    // test object
+    objects[2].mass = 7.348e25;  // kg
+    objects[2].motion.position = (Vec3){-384400000.0f, 0.0f, 0.0f};  // meters from Earth
+    objects[2].motion.velocity = (Vec3){0.0f, -1022.0f, 0.0f};        // m/s (orbital speed)
+    objects[2].motion.force = (Vec3){0.0f, 0.0f, 0.0f};        // m/s (orbital speed)
     
-    
-     printf("\n\nThe gravitation force between object 1 and object 2 split along each axis is:");
-    
-    printf("\nx-axis: %e", force.x);
-    printf("\ny-axis: %e", force.y);
-    printf("\nz-axis: %e", force.z);
-    
-
-    
-    force = gravitational_force_vector(objects[1], objects[0]);
-
-    printf("\n\nThe gravitation force between object 1 and object 2 split along each axis is:");
-    
-    printf("\nx-axis: %e", force.x);
-    printf("\ny-axis: %e", force.y);
-    printf("\nz-axis: %e", force.z);
-    
-    */
-   
-
-
-
-for (int i = 0; i < ((WEEK*4) / DELTA_TIME); i++)
+    for (int i = 0; i < ((WEEK*4) / DELTA_TIME); i++)
     {
 
-        // display results every hour
-        /*
-        if (i % 60 == 0)
+        // render every day
+        if (i % (DAY / (int)DELTA_TIME) == 0)
         {
-            printf("\nDay %d, Hour %d:", (i / 60) /24, (i / 60) % 24);
-            display_position(objects[1]);
+            printf("\nDay %d\n", (i / (DAY / (int)DELTA_TIME)));
+            render_objects(objects, 1);
         }
         
-        */
-
-
-        if (i % (60 * 24) == 0)
-        {
-            printf("\nDay %d\n", (i / (60 * 24)));
-            render_objects(objects);
-        }
-        
-
-        force1 = gravitational_force_vector(objects[0], objects[1]);
-        force2 = gravitational_force_vector(objects[1], objects[0]);
-
-        update(&objects[0], force1);
-        update(&objects[1], force2);
+        apply_gravitational_forces_N(objects);
+        update_N(objects);
     }
 
     return 0;
@@ -140,35 +109,54 @@ double distance(Object object1, Object object2)
     return sqrt(distanceX * distanceX + distanceY * distanceY + distanceZ * distanceZ);
 };
 
-double gravitational_force(Object object1, Object object2)
-{
-    double r = distance(object1, object2);
-    return (GRAVITATIONAL_CONSTANT * (object1.mass * object2.mass)) / (r * r);
-};
-
-Vec3 gravitational_force_vector(Object object1, Object object2) {
+void apply_gravitational_forces(Object *object1, Object *object2) {
     Vec3 r;
-    r.x = object2.motion.position.x - object1.motion.position.x;
-    r.y = object2.motion.position.y - object1.motion.position.y;
-    r.z = object2.motion.position.z - object1.motion.position.z;
+    r.x = object2->motion.position.x - object1->motion.position.x;
+    r.y = object2->motion.position.y - object1->motion.position.y;
+    r.z = object2->motion.position.z - object1->motion.position.z;
 
     double distance = sqrt(r.x * r.x + r.y * r.y + r.z * r.z);
-    double force_magnitude = (GRAVITATIONAL_CONSTANT * object1.mass * object2.mass) / (distance * distance);
+    double force_magnitude = (GRAVITATIONAL_CONSTANT * object1->mass * object2->mass) / (distance * distance);
 
     Vec3 force;
     force.x = force_magnitude * r.x / distance;
     force.y = force_magnitude * r.y / distance;
     force.z = force_magnitude * r.z / distance;
 
-    return force;
+
+    object1->motion.force.x += force.x; 
+    object1->motion.force.y += force.y; 
+    object1->motion.force.z += force.z; 
+
+    object2->motion.force.x -= force.x; 
+    object2->motion.force.y -= force.y; 
+    object2->motion.force.z -= force.z; 
 }
 
-void update(Object *object, Vec3 force) {
+void apply_gravitational_forces_N(Object objects[])
+{
+    
+    for (int i = 0; i < NO_OBJECTS; i++)
+    {
+        objects[i].motion.force = (Vec3){0.0f,0.0f,0.0f};
+    }
+
+    for (int i = 0; i < (NO_OBJECTS - 1); i++)
+    {
+        for (int j = i+1;  j < NO_OBJECTS; j++)
+        {
+            apply_gravitational_forces(&objects[i], &objects[j]);
+        } 
+    }
+}
+
+void update(Object *object) {
     Vec3 acceleration = {
-        force.x / object->mass,
-        force.y / object->mass,
-        force.z / object->mass
+        object->motion.force.x / object->mass,
+        object->motion.force.y / object->mass,
+        object->motion.force.z / object->mass
     };
+
     object->motion.velocity.x += acceleration.x * DELTA_TIME;
     object->motion.velocity.y += acceleration.y * DELTA_TIME;
     object->motion.velocity.z += acceleration.z * DELTA_TIME;
@@ -178,7 +166,13 @@ void update(Object *object, Vec3 force) {
     object->motion.position.z += object->motion.velocity.z * DELTA_TIME;
 }
 
-
+void update_N(Object objects[])
+{
+    for (int i = 0; i < NO_OBJECTS; i++)
+    {
+        update(&objects[i]);
+    }
+}
 
 
 void display_position(Object object)
@@ -190,30 +184,34 @@ void display_position(Object object)
 };
 
 
-void render_objects(Object objects[])
+void render_objects(Object objects[], float zoom)
 {
     Vec3 coordinates[NO_OBJECTS];
     bool displayed = false;
-    int screen_size = 21;
-    int half_screen_size = screen_size / 2;
-    int pixel_size = RENDER_SIZE / half_screen_size;
+
+    // number of pixels from the middle to the end
+    int half_screen_sizeX = NO_PIXELSX / 2;
+    int half_screen_sizeY = NO_PIXELSY / 2;
+
+    int pixel_sizeX = (RENDER_SIZE / half_screen_sizeX) / zoom;
+    int pixel_sizeY = (RENDER_SIZE / half_screen_sizeY) / zoom;
 
     for (int i = 0; i < NO_OBJECTS; i++)
     {
-        coordinates[i].x = (objects[i].motion.position.x / pixel_size) + (half_screen_size);
-        coordinates[i].y = (objects[i].motion.position.y / pixel_size) + (half_screen_size);
+        coordinates[i].x = (objects[i].motion.position.x / pixel_sizeX) + (half_screen_sizeX);
+        coordinates[i].y = (objects[i].motion.position.y / pixel_sizeY) + (half_screen_sizeY);
     }
 
 
-    for (int y = 0; y < screen_size; y++)
+    for (int y = 0; y < NO_PIXELSY; y++)
     {
-        for (int x = 0; x < screen_size; x++)
+        for (int x = 0; x < NO_PIXELSX; x++)
         {
             for (int ob = 0; ob < NO_OBJECTS; ob++)
             {
-                if ((int)coordinates[ob].x == x && (screen_size - (int)coordinates[ob].y) == y)
+                if ((int)coordinates[ob].x == x && ((NO_PIXELSY - 1) - (int)coordinates[ob].y) == y)
                 {
-                    printf(" @ ");
+                    printf(" %c ", objects[ob].symbol);
                     displayed = true;
 
                 }
@@ -221,7 +219,7 @@ void render_objects(Object objects[])
             
             if (!displayed)
             {
-                printf(" * ");
+                printf(" . ");
             }
 
             displayed = false;
