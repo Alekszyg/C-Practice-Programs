@@ -7,6 +7,10 @@
 #define DAY HOUR * 24
 #define WEEK DAY * 7
 
+// distance from middle of render to end
+#define RENDER_SIZE 500000000
+#define NO_OBJECTS 2
+
 const double GRAVITATIONAL_CONSTANT = 6.67430e-11;
 
 // every minute
@@ -39,18 +43,16 @@ double distance(Object, Object);
 double gravitational_force(Object, Object);
 Vec3 gravitational_force_vector(Object, Object);
 
-// updates an object's velocity based on the forces acting on it
-void update_velocity(Object*, Vec3);
-
-// updates an object's position based on it's velocity
-void update_position(Object*);
 void display_position(Object);
 
+// updates an objects velocity and position based on the force acting on it
 void update(Object *object, Vec3 force);
+
+void render_objects(Object[]);
 
 int main()
 {
-    Object objects[2];
+    Object objects[NO_OBJECTS];
     Vec3 force1;
     Vec3 force2;
     
@@ -64,12 +66,20 @@ int main()
     objects[1].motion.position = (Vec3){384400000.0f, 0.0f, 0.0f};  // meters from Earth
     objects[1].motion.velocity = (Vec3){0.0f, 1022.0f, 0.0f};        // m/s (orbital speed)
 
+
+
+    //render_objects(objects);
+
+    /*
     printf("The distance between object 1 and object 2 is: %f\n", distance(objects[0], objects[1]));
     printf("The gravitation force between object 1 and object 2 is: %e", gravitational_force(objects[0], objects[1]));
 
     Vec3 force = gravitational_force_vector(objects[0], objects[1]);
 
-    printf("\n\nThe gravitation force between object 1 and object 2 split along each axis is:");
+
+    
+    
+     printf("\n\nThe gravitation force between object 1 and object 2 split along each axis is:");
     
     printf("\nx-axis: %e", force.x);
     printf("\ny-axis: %e", force.y);
@@ -84,17 +94,32 @@ int main()
     printf("\nx-axis: %e", force.x);
     printf("\ny-axis: %e", force.y);
     printf("\nz-axis: %e", force.z);
+    
+    */
+   
 
 
- for (int i = 0; i < ((WEEK*4) / DELTA_TIME); i++)
+
+for (int i = 0; i < ((WEEK*4) / DELTA_TIME); i++)
     {
 
         // display results every hour
+        /*
         if (i % 60 == 0)
         {
             printf("\nDay %d, Hour %d:", (i / 60) /24, (i / 60) % 24);
             display_position(objects[1]);
         }
+        
+        */
+
+
+        if (i % (60 * 24) == 0)
+        {
+            printf("\nDay %d\n", (i / (60 * 24)));
+            render_objects(objects);
+        }
+        
 
         force1 = gravitational_force_vector(objects[0], objects[1]);
         force2 = gravitational_force_vector(objects[1], objects[0]);
@@ -102,8 +127,7 @@ int main()
         update(&objects[0], force1);
         update(&objects[1], force2);
     }
-   
-    
+
     return 0;
 }
 
@@ -162,5 +186,49 @@ void display_position(Object object)
     printf("\nx-coordinate: %e", object.motion.position.x);
     printf("\ny-coordinate: %e", object.motion.position.y);
     printf("\nz-coordinate: %e\n", object.motion.position.z);
+
+};
+
+
+void render_objects(Object objects[])
+{
+    Vec3 coordinates[NO_OBJECTS];
+    bool displayed = false;
+    int screen_size = 21;
+    int half_screen_size = screen_size / 2;
+    int pixel_size = RENDER_SIZE / half_screen_size;
+
+    for (int i = 0; i < NO_OBJECTS; i++)
+    {
+        coordinates[i].x = (objects[i].motion.position.x / pixel_size) + (half_screen_size);
+        coordinates[i].y = (objects[i].motion.position.y / pixel_size) + (half_screen_size);
+    }
+
+
+    for (int y = 0; y < screen_size; y++)
+    {
+        for (int x = 0; x < screen_size; x++)
+        {
+            for (int ob = 0; ob < NO_OBJECTS; ob++)
+            {
+                if ((int)coordinates[ob].x == x && (screen_size - (int)coordinates[ob].y) == y)
+                {
+                    printf(" @ ");
+                    displayed = true;
+
+                }
+            }
+            
+            if (!displayed)
+            {
+                printf(" * ");
+            }
+
+            displayed = false;
+        }
+        
+        printf("\n");
+    }
+
 
 };
