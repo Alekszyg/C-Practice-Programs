@@ -21,6 +21,9 @@ const double GRAVITATIONAL_CONSTANT = 6.67430e-11;
 // update every minute
 const double DELTA_TIME = MINUTE;
 
+// enum for plane axes
+enum Planes {XY, YZ, ZX};
+
 typedef struct
 {
     double x;
@@ -56,7 +59,7 @@ void display_position(Object);
 void update(Object *object);
 void update_N(Object[]);
 
-void render_objects(Object[], float);
+void render_objects(Object[], int ,float);
 
 int main()
 {
@@ -90,7 +93,7 @@ int main()
         if (i % (DAY / (int)DELTA_TIME) == 0)
         {
             printf("\nDay %d\n", (i / (DAY / (int)DELTA_TIME)));
-            render_objects(objects, 1);
+            render_objects(objects, XY, 1);
         }
         
         apply_gravitational_forces_N(objects);
@@ -184,7 +187,7 @@ void display_position(Object object)
 };
 
 
-void render_objects(Object objects[], float zoom)
+void render_objects(Object objects[], int plane, float zoom)
 {
     Vec3 coordinates[NO_OBJECTS];
     bool displayed = false;
@@ -198,8 +201,21 @@ void render_objects(Object objects[], float zoom)
 
     for (int i = 0; i < NO_OBJECTS; i++)
     {
-        coordinates[i].x = (objects[i].motion.position.x / pixel_sizeX) + (half_screen_sizeX);
-        coordinates[i].y = (objects[i].motion.position.y / pixel_sizeY) + (half_screen_sizeY);
+        if (plane == XY)
+        {
+            coordinates[i].x = (objects[i].motion.position.x / pixel_sizeX) + (half_screen_sizeX);
+            coordinates[i].y = (objects[i].motion.position.y / pixel_sizeY) + (half_screen_sizeY);
+        }
+        else if (plane == YZ)
+        {
+            coordinates[i].x = (objects[i].motion.position.y / pixel_sizeX) + (half_screen_sizeX);
+            coordinates[i].y = (objects[i].motion.position.z / pixel_sizeY) + (half_screen_sizeY);
+        }
+        else if (plane == ZX)
+        {
+            coordinates[i].x = (objects[i].motion.position.z / pixel_sizeX) + (half_screen_sizeX);
+            coordinates[i].y = (objects[i].motion.position.x / pixel_sizeY) + (half_screen_sizeY);
+        }
     }
 
 
@@ -213,6 +229,7 @@ void render_objects(Object objects[], float zoom)
                 {
                     printf(" %c ", objects[ob].symbol);
                     displayed = true;
+                    break;
 
                 }
             }
@@ -229,4 +246,4 @@ void render_objects(Object objects[], float zoom)
     }
 
 
-};
+}
