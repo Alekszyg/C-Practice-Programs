@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <math.h>
 #include <stdbool.h>
 
@@ -9,6 +10,13 @@
 
 // update simulation every minute
 #define DELTA_TIME (MINUTE)
+// record objects data every minute
+#define LOG_STEP (MINUTE)
+
+#define MINUTE_INTERVAL (MINUTE / DELTA_TIME)
+#define HOUR_INTERVAL ( HOUR / DELTA_TIME )
+#define DAY_INTERVAL ( DAY / DELTA_TIME )
+#define WEEK_INTERVAL ( WEEK / DELTA_TIME ) 
 
 // the timescale of the simulation
 #define TIME_SCALE (WEEK * 4)
@@ -65,17 +73,34 @@ void update(Object *object);
 void update_N(Object[]);
 
 // updates the log, a record of all the objects variables over time
-void update_log(Object[][NO_OBJECTS], Object[], int time);
+void update_log(Object*, Object[], int time);
+
+// retrieves a pointer to the object array at a given moment
+Object* get_log_data(Object *sim_log, Object[], int time_seconds);
 
 void render_objects(Object[], int ,float);
+
+// checks if step is at a given interval
+bool is_interval(int, int);
 
 int main()
 {
     Object objects[NO_OBJECTS];
 
     // keeps log of object attributes every hour
-    Object simulation_log[TIME_SCALE / HOUR][NO_OBJECTS];
+    //Object simulation_log[TIME_SCALE / HOUR][NO_OBJECTS];
     
+    int rows = TIME_SCALE / LOG_STEP;
+    int cols = NO_OBJECTS;
+
+    printf("rows = %d, cols = %d\n", rows, cols);
+    Object *simulation_log = malloc(rows * cols * sizeof(Object));
+    if (!simulation_log)
+    {
+        perror("malloc failed");
+        exit(EXIT_FAILURE);
+    }
+
     // Earth
     objects[0].mass = 5.972e24;  // kg
     objects[0].motion.position = (Vec3){0.0f, 0.0f, 0.0f};
@@ -92,27 +117,38 @@ int main()
     objects[1].symbol = 'M';
 
     // test object
+    /*
     objects[2].mass = 7.348e25;  // kg
     objects[2].motion.position = (Vec3){-384400000.0f, 0.0f, 0.0f};  // meters from Earth
     objects[2].motion.velocity = (Vec3){0.0f, -1022.0f, 0.0f};        // m/s (orbital speed)
     objects[2].motion.force = (Vec3){0.0f, 0.0f, 0.0f};        // m/s (orbital speed)
-    
-    for (int i = 0; i < (TIME_SCALE / DELTA_TIME); i++)
+    */
+
+    // i = DELTA_TIME step
+    for (int i = 0; i < (TIME_SCALE / DELTA_TIME) + 1; i++)
     {
-        //update_log(simulation_log, objects, i);
+
+        // log every minute
+        if (is_interval(MINUTE_INTERVAL, i))
+        {
+            update_log(simulation_log, objects, i * DELTA_TIME);
+        }
 
         // render every day
-        if (i % (DAY / DELTA_TIME) == 0)
+        if (is_interval(DAY_INTERVAL, i))
         {
-            printf("\nDay %d\n", (i / (DAY / DELTA_TIME)));
-            //update_log(simulation_log, objects, (int)(i / (DAY / (int)DELTA_TIME)));
+            printf("\nDay %d\n", i /(DAY_INTERVAL));
             render_objects(objects, XY, 1);
+            display_position(objects[0]);
         }
 
 
         apply_gravitational_forces_N(objects);
         update_N(objects);
     }
+
+    render_objects(get_log_data(simulation_log, objects, DAY * 27), XY, 1);
+    free(simulation_log);
 
     return 0;
 }
@@ -126,6 +162,8 @@ double distance(Object object1, Object object2)
     return sqrt(distanceX * distanceX + distanceY * distanceY + distanceZ * distanceZ);
 };
 
+
+// applies the gravitational forces between two objects
 void apply_gravitational_forces(Object *object1, Object *object2) {
     Vec3 r;
     r.x = object2->motion.position.x - object1->motion.position.x;
@@ -150,6 +188,8 @@ void apply_gravitational_forces(Object *object1, Object *object2) {
     object2->motion.force.z -= force.z; 
 }
 
+
+// applies the gravitational forces between all objects
 void apply_gravitational_forces_N(Object objects[])
 {
     
@@ -167,6 +207,8 @@ void apply_gravitational_forces_N(Object objects[])
     }
 }
 
+
+// updates the velocity and position of a given object
 void update(Object *object) {
     Vec3 acceleration = {
         object->motion.force.x / object->mass,
@@ -183,6 +225,8 @@ void update(Object *object) {
     object->motion.position.z += object->motion.velocity.z * DELTA_TIME;
 }
 
+
+// updates the velocity and position of all objects
 void update_N(Object objects[])
 {
     for (int i = 0; i < NO_OBJECTS; i++)
@@ -192,15 +236,17 @@ void update_N(Object objects[])
 }
 
 
+// displays the position of a given object
 void display_position(Object object)
 {
-    printf("\nx-coordinate: %e", object.motion.position.x);
-    printf("\ny-coordinate: %e", object.motion.position.y);
-    printf("\nz-coordinate: %e\n", object.motion.position.z);
+    printf("\nx: %e", object.motion.position.x);
+    printf("\ny: %e", object.motion.position.y);
+    printf("\nz: %e\n", object.motion.position.z);
 
 };
 
 
+// renders all the objects in ASCII in a given area
 void render_objects(Object objects[], int plane, float zoom)
 {
     Vec3 coordinates[NO_OBJECTS];
@@ -263,11 +309,33 @@ void render_objects(Object objects[], int plane, float zoom)
 }
 
 
-void update_log(Object sim_log[][NO_OBJECTS], Object objects[], int time)
+// writes all the objects motion data to the simulation log
+void update_log(Object *sim_log, Object objects[], int time_seconds)
 {
+    int index = (time_seconds / LOG_STEP);
     for (int i = 0; i < NO_OBJECTS; i++)
     {
-        //sim_log[time][i].mass = objects[i].mass;
-        sim_log[time][i].motion = objects[i].motion;
+        sim_log[index * NO_OBJECTS + i].motion = objects[i].motion;
     }
+}
+
+
+Object* get_log_data(Object *sim_log, Object Objects[], int time_seconds)
+{
+    int index = (time_seconds / LOG_STEP);
+
+    for (int i = 0; i < NO_OBJECTS; i++)
+    {
+        sim_log[index * NO_OBJECTS + i].mass = Objects[i].mass;
+        sim_log[index * NO_OBJECTS + i].symbol = Objects[i].symbol;
+    }
+
+    return &sim_log[index * NO_OBJECTS];
+}
+
+
+// returns true if step is at a given time interval
+bool is_interval(int interval, int step)
+{
+    return step % interval == 0;
 }
