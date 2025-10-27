@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <stdbool.h>
+#include <windows.h>
 
 #define MINUTE (60)
 #define HOUR (MINUTE * 60)
@@ -19,9 +20,10 @@ int log_step = MINUTE;
 // how often objects are rendered
 int render_step = DAY;
 
-int zoom = 1;
+// if true, each render each stays on screen until user dismisses
+bool render_walkthrough = true;
 
-int plane = XY;
+int zoom = 1;
 
 // the timescale of the simulation
 int time_scale = (WEEK * 4);
@@ -46,6 +48,8 @@ const double GRAVITATIONAL_CONSTANT = 6.67430e-11;
 
 // enum for plane axes
 enum Planes {XY, YZ, XZ};
+
+int plane = XY;
 
 typedef struct
 {
@@ -111,6 +115,8 @@ int simulation_ui(Object *sim_log, Object[]);
 void intro();
 
 void menu_banner(int menu);
+
+void clear_input_buffer();
 
 int main()
 {
@@ -383,10 +389,17 @@ void render_objects(Object objects[], int plane, float zoom)
 
 void render_objects_over_time(Object *sim_log, int plane, float zoom, int start, int end)
 {
+    clear_input_buffer();
+
     for (int i = (start / render_step); i < (end / render_step) + 1; i++)
     {
-        printf("\n%s\n", display_time(i * render_step));
+        printf("\n\n%s\n", display_time(i * render_step));
         render_objects(get_log_data(sim_log, i * render_step), plane, zoom);
+
+        if (render_walkthrough)
+        {
+            getchar();
+        }
     }
 }
 
@@ -565,7 +578,7 @@ int simulation_ui(Object *sim_log, Object objects[])
             scanf("%d %d %d", &days, &hours, &minutes);
             time_seconds_end = (days * DAY) + (hours * HOUR) + (minutes * MINUTE);
             
-            render_objects_over_time(sim_log, XY, zoom, time_seconds_start, time_seconds_end);
+            render_objects_over_time(sim_log, plane, zoom, time_seconds_start, time_seconds_end);
         }
 
     } while (user_choice != -1);
@@ -655,6 +668,7 @@ int settings_ui()
             printf("  - Adjust render step (1)\n");
             printf("  - Adjust zoom level (2)\n");
             printf("  - Change coordinate plane (3)\n");
+            printf("  - Change walkthrough settings (4)\n");
             printf("  - Return to previous menu (-1)\n");
 
             scanf("%d", &user_choice);
@@ -683,12 +697,37 @@ int settings_ui()
             }
             else if (user_choice == 3)
             {
-                printf("\nCoordinate plane refers to \n");
-                printf("The current zoom level is: %d", zoom);
-                printf("\nWhat do you want the zoom level to be?\n");
-                scanf("%d", &zoom);
+                char *plane_str;
+                if (plane == XY)
+                {
+                    plane_str = "XY";
+                }
+                else if (plane == YZ)
+                {
+                    plane_str = "YZ";
+                }
+                else
+                {
+                    plane_str = "XZ";
+                }
 
 
+
+                printf("\nCoordinate plane refers to what two axes make the rendered image\n");
+                printf("The current coordinate plane is: %s", plane_str);
+                printf("\nWhat do you want the coordinate plane to be? XY(0), YZ(1) or XZ(2)\n");
+                scanf("%d", &plane);
+
+                printf("\nCoordinate plane changed successfully!\n");
+            }
+            else if (user_choice == 4)
+            {
+                printf("\nWalkthrough refers to if you want for each image to stay on the screen until dismissed\n");
+                printf("\nThe current walkthrough setting is: %d", render_walkthrough);
+                printf("\nWhat do you want the walkthrough setting to be? True(1) or false(0)\n");
+                scanf("%d", &render_walkthrough);
+
+                printf("\nWalkthrough setting changed successfully!\n");
             }
             
             user_choice = 0;
@@ -749,6 +788,12 @@ void menu_banner(int menu)
     {
         printf("-");
     }
+}
+
+
+void clear_input_buffer() {
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
 }
 
 
