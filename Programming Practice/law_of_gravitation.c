@@ -4,54 +4,55 @@
 #include <stdbool.h>
 #include <windows.h>
 
-
 // time units in seconds
 #define MINUTE (60)
 #define HOUR (MINUTE * 60)
 #define DAY (HOUR * 24)
 #define WEEK (DAY * 7)
 
-
 // simulation constants
-#define NO_OBJECTS 4
+#define NO_OBJECTS 3
 const double GRAVITATIONAL_CONSTANT = 6.67430e-11;
 
-
 // simulation configuration
-int delta_time = MINUTE; // simulaton step duration
-int log_step = MINUTE; // how often data is recorded
+int delta_time = MINUTE;     // simulaton step duration
+int log_step = MINUTE;       // how often data is recorded
 int time_scale = (WEEK * 4); // total duration of the simulation
-
 
 // derived intervals
 #define MINUTE_INTERVAL (MINUTE / delta_time)
-#define HOUR_INTERVAL ( HOUR / delta_time )
-#define DAY_INTERVAL ( DAY / delta_time )
-#define WEEK_INTERVAL ( WEEK / delta_time ) 
-
+#define HOUR_INTERVAL (HOUR / delta_time)
+#define DAY_INTERVAL (DAY / delta_time)
+#define WEEK_INTERVAL (WEEK / delta_time)
 
 // enum for plane axes
-enum Planes {XY, YZ, XZ};
-
+enum Planes
+{
+    XY,
+    YZ,
+    XZ
+};
 
 // render configuration
 #define RENDER_SIZE 400000000 // 400 million metres (half-width of view)
 // NO_PIXELSX / NO_PIXELSY = 0.81 for square grid
-#define NO_PIXELSX 34 // 17
-#define NO_PIXELSY 42 // 21
-int render_step = DAY; // how often rendering occurs
+#define NO_PIXELSX 33    // 17
+#define NO_PIXELSY 41    // 21
+int render_step = DAY;   // how often rendering occurs
 bool render_wait = true; // pause after each render
-int zoom = 1; // render zoom level
+float zoom = 1;          // render zoom level
 double offsetX = 0;
 double offsetY = 0;
-int plane = XY; // 
+double offsetZ = 0;
+int view_focused_object = -1;      // what object is the view focused on
+int motion_relative_to_object = 0; // displays motion relative to this object
 
+int plane = XY; //
 
 typedef struct
 {
     double x, y, z;
 } Vec3;
-
 
 typedef struct
 {
@@ -59,7 +60,6 @@ typedef struct
     Vec3 velocity;
     Vec3 force;
 } Motion;
-
 
 typedef struct
 {
@@ -69,55 +69,49 @@ typedef struct
 
 } Object;
 
-
 // core physics
 double distance(Object, Object);
-void apply_gravitational_forces(Object*, Object*);
+void apply_gravitational_forces(Object *, Object *);
 void apply_gravitational_forces_N(Object[]);
-
 
 // state updates
 void update(Object *object);
 void update_N(Object[]);
 
-
 // simulation log
-void update_log(Object*, Object[], int time);
-Object* get_log_data(Object *sim_log, int time_seconds);
-
+void update_log(Object *, Object[], int time);
+Object *get_log_data(Object *sim_log, int time_seconds);
 
 // simulation control
-void simulate(Object *sim_log, Object initial_objects[] ,Object objects[], int time_seconds);
-
+void simulate(Object *sim_log, Object initial_objects[], Object objects[], int time_seconds);
 
 // rendering
 void render_objects(Object[], int time_seconds, int plane, float zoom);
-void render_objects_advanced(Object *sim_log, int time_seconds ,int plane, float zoom, int start, int end);
-void render_objects_over_time(Object *sim_log, int plane, float zoom, int start, int end);
-
+void render_objects_advanced(Object *sim_log, int time_seconds, int start, int end);
+void render_objects_over_time(Object *sim_log, int start, int end);
 
 // utility
 bool is_interval(int, int);
-char* display_time(int);
+char *display_time(int);
+char *format_number(double number);
 void display_position(Object);
 void display_all_information(Object objects[]);
 void clear_input_buffer();
 
-
 // ui
-int program_ui(Object *sim_log, Object[] ,Object[]);
+int program_ui(Object *sim_log, Object[], Object[]);
 int simulation_ui(Object *sim_log, Object[], Object[]);
 int settings_ui();
+int simulation_settings_ui();
+int render_settings_ui();
 void intro();
 void menu_banner(int menu);
-
-
 
 int main()
 {
     Object objects[NO_OBJECTS];
     Object initial_objects[NO_OBJECTS];
-    
+
     int rows = time_scale / log_step;
     int cols = NO_OBJECTS;
 
@@ -128,34 +122,36 @@ int main()
         exit(EXIT_FAILURE);
     }
 
-    // Earth
-    objects[0].mass = 5.972e24;  // kg
+    // Earth - orbiting speed 30,000
+    objects[0].mass = 5.972e24; // kg
     objects[0].motion.position = (Vec3){0.0f, 0.0f, 0.0f};
-    objects[0].motion.velocity = (Vec3){0.0f, 30000.0f, 0.0f};
+    objects[0].motion.velocity = (Vec3){0.0f, 0.0f, 0.0f};
     objects[0].motion.force = (Vec3){0.0f, 0.0f, 0.0f};
     objects[0].symbol = 'E';
 
     // Moon
-    objects[1].mass = 7.348e22;  // kg
-    objects[1].motion.position = (Vec3){384400000.0f, 0.0f, 0.0f};  // meters from Earth
-    objects[1].motion.velocity = (Vec3){0.0f, 30000.0f + 1022.0f, 0.0f};        // m/s (orbital speed)
-    objects[1].motion.force = (Vec3){0.0f, 0.0f, 0.0f};        // m/s (orbital speed)
+    objects[1].mass = 7.348e22;                                    // kg
+    objects[1].motion.position = (Vec3){384400000.0f, 0.0f, 0.0f}; // meters from Earth
+    objects[1].motion.velocity = (Vec3){0.0f, 1022.0f, 0.0f};      // m/s (orbital speed)
+    objects[1].motion.force = (Vec3){0.0f, 0.0f, 0.0f};            // m/s (orbital speed)
     // moon orbital speed 1022.0f
     objects[1].symbol = 'M';
 
     // Satellite
-    objects[2].mass = 6000;  // kg
-    objects[2].motion.position = (Vec3){36000000.0f, 0.0f, 0.0f};  // meters from Earth
-    objects[2].motion.velocity = (Vec3){0.0f, 30000.0f + 2000.0f, 2000.0f};        // m/s (orbital speed)
-    objects[2].motion.force = (Vec3){0.0f, 0.0f, 0.0f};        // m/s (orbital speed)
+    objects[2].mass = 6000;                                       // kg
+    objects[2].motion.position = (Vec3){0.0f, 3.6e7f, 0.0f}; // meters from Earth
+    objects[2].motion.velocity = (Vec3){3000.0f, 2000.0f, 2000.0f};  // m/s (orbital speed)
+    objects[2].motion.force = (Vec3){0.0f, 0.0f, 0.0f};           // m/s (orbital speed)
     objects[2].symbol = 'S';
 
+    /*
     // Sun
     objects[3].mass = 1.989e30;  // kg
     objects[3].motion.position = (Vec3){-150000000000.0f, 0.0f, 0.0f};  // meters from Earth
     objects[3].motion.velocity = (Vec3){0.0f, 0.0f, 0.0f};        // m/s (orbital speed)
     objects[3].motion.force = (Vec3){0.0f, 0.0f, 0.0f};        // m/s (orbital speed)
     objects[3].symbol = 'o';
+    */
 
     memcpy(initial_objects, objects, sizeof(objects));
 
@@ -169,7 +165,7 @@ int main()
 
         // log every log_step
         update_log(simulation_log, objects, i * delta_time);
-        
+
         // render every day
         if (is_interval(DAY_INTERVAL, i))
         {
@@ -183,12 +179,10 @@ int main()
         apply_gravitational_forces_N(objects);
         update_N(objects);
     }
-    
+
     */
-    
 
-
-    //render_objects(get_log_data(simulation_log, objects, WEEK - (DAY / 2)), XY, 1);
+    // render_objects(get_log_data(simulation_log, objects, WEEK - (DAY / 2)), XY, 1);
     free(simulation_log);
 
     return 0;
@@ -197,7 +191,7 @@ int main()
 /*
     core physics
 */
-//calculates the distance between two objects
+// calculates the distance between two objects
 double distance(Object object1, Object object2)
 {
     double distanceX = object1.motion.position.x - object2.motion.position.x;
@@ -207,9 +201,9 @@ double distance(Object object1, Object object2)
     return sqrt(distanceX * distanceX + distanceY * distanceY + distanceZ * distanceZ);
 };
 
-
 // applies the gravitational forces between two objects
-void apply_gravitational_forces(Object *object1, Object *object2) {
+void apply_gravitational_forces(Object *object1, Object *object2)
+{
     Vec3 r;
     r.x = object2->motion.position.x - object1->motion.position.x;
     r.y = object2->motion.position.y - object1->motion.position.y;
@@ -223,48 +217,43 @@ void apply_gravitational_forces(Object *object1, Object *object2) {
     force.y = force_magnitude * r.y / distance;
     force.z = force_magnitude * r.z / distance;
 
+    object1->motion.force.x += force.x;
+    object1->motion.force.y += force.y;
+    object1->motion.force.z += force.z;
 
-    object1->motion.force.x += force.x; 
-    object1->motion.force.y += force.y; 
-    object1->motion.force.z += force.z; 
-
-    object2->motion.force.x -= force.x; 
-    object2->motion.force.y -= force.y; 
-    object2->motion.force.z -= force.z; 
+    object2->motion.force.x -= force.x;
+    object2->motion.force.y -= force.y;
+    object2->motion.force.z -= force.z;
 }
-
 
 // applies the gravitational forces between all objects
 void apply_gravitational_forces_N(Object objects[])
 {
-    
+
     for (int i = 0; i < NO_OBJECTS; i++)
     {
-        objects[i].motion.force = (Vec3){0.0f,0.0f,0.0f};
+        objects[i].motion.force = (Vec3){0.0f, 0.0f, 0.0f};
     }
 
     for (int i = 0; i < (NO_OBJECTS - 1); i++)
     {
-        for (int j = i+1;  j < NO_OBJECTS; j++)
+        for (int j = i + 1; j < NO_OBJECTS; j++)
         {
             apply_gravitational_forces(&objects[i], &objects[j]);
-        } 
+        }
     }
 }
-
-
-
 
 /*
     state updates
 */
 // updates the velocity and position of a given object
-void update(Object *object) {
+void update(Object *object)
+{
     Vec3 acceleration = {
         object->motion.force.x / object->mass,
         object->motion.force.y / object->mass,
-        object->motion.force.z / object->mass
-    };
+        object->motion.force.z / object->mass};
 
     object->motion.velocity.x += acceleration.x * delta_time;
     object->motion.velocity.y += acceleration.y * delta_time;
@@ -275,7 +264,6 @@ void update(Object *object) {
     object->motion.position.z += object->motion.velocity.z * delta_time;
 }
 
-
 // updates the velocity and position of all objects
 void update_N(Object objects[])
 {
@@ -284,9 +272,6 @@ void update_N(Object objects[])
         update(&objects[i]);
     }
 }
-
-
-
 
 /*
     simulation log
@@ -304,25 +289,20 @@ void update_log(Object *sim_log, Object objects[], int time_seconds)
             sim_log[index * NO_OBJECTS + i].symbol = objects[i].symbol;
         }
     }
-    
 }
 
-
 // retrieves log data
-Object* get_log_data(Object *sim_log, int time_seconds)
+Object *get_log_data(Object *sim_log, int time_seconds)
 {
     int index = (time_seconds / log_step);
 
     return &sim_log[index * NO_OBJECTS];
 }
 
-
-
-
 /*
     simulation control
 */
-void simulate(Object *sim_log, Object initial_objects[] , Object objects[], int time_seconds)
+void simulate(Object *sim_log, Object initial_objects[], Object objects[], int time_seconds)
 {
     memcpy(objects, initial_objects, NO_OBJECTS * sizeof(objects[0]));
 
@@ -332,22 +312,17 @@ void simulate(Object *sim_log, Object initial_objects[] , Object objects[], int 
 
         // log every log_step
         update_log(sim_log, objects, i * delta_time);
-        
+
         apply_gravitational_forces_N(objects);
         update_N(objects);
     }
-
-    display_all_information(objects);
 }
-
-
-
 
 /*
     rendering
 */
 // renders all the objects in ASCII in a given area
-void render_objects(Object objects[], int time_seconds ,int plane, float zoom)
+void render_objects(Object objects[], int time_seconds, int plane, float zoom)
 {
     char *plane_str;
 
@@ -383,7 +358,6 @@ void render_objects(Object objects[], int time_seconds ,int plane, float zoom)
         }
     }
 
-
     printf("\n\n%s", display_time(time_seconds));
     printf("   ZOOM: \033[36m%4.2fx\033[0m   ", zoom);
     printf("%s\n", plane_str);
@@ -398,10 +372,9 @@ void render_objects(Object objects[], int time_seconds ,int plane, float zoom)
                     printf(" %c ", objects[ob].symbol);
                     displayed = true;
                     break;
-
                 }
             }
-            
+
             if (!displayed)
             {
                 printf(" . ");
@@ -409,19 +382,34 @@ void render_objects(Object objects[], int time_seconds ,int plane, float zoom)
 
             displayed = false;
         }
-        
+
         printf("\n");
     }
-    
 }
 
-
-void render_objects_advanced(Object *sim_log, int time_seconds ,int plane, float zoom, int start, int end)
+void render_objects_advanced(Object *sim_log, int time_seconds, int start, int end)
 {
     char *plane_str;
     Vec3 coordinates[NO_OBJECTS];
     int trail[NO_PIXELSX][NO_PIXELSY];
     char slope_position[NO_PIXELSX][NO_PIXELSY];
+
+    int depths[NO_PIXELSX][NO_PIXELSY];
+    double closest = 0.0;
+
+    bool closest_initialised = false;
+
+    if (view_focused_object >= 0)
+    {
+        offsetX = -1 * get_log_data(sim_log, time_seconds)[view_focused_object].motion.position.x;
+        offsetY = -1 * get_log_data(sim_log, time_seconds)[view_focused_object].motion.position.y;
+        offsetZ = -1 * get_log_data(sim_log, time_seconds)[view_focused_object].motion.position.z;
+    }
+    else
+    {
+        offsetX = 0;
+        offsetY = 0;
+    }
 
     for (int x = 0; x < NO_PIXELSX; x++)
     {
@@ -444,95 +432,163 @@ void render_objects_advanced(Object *sim_log, int time_seconds ,int plane, float
     {
         if (plane == XY)
         {
-            plane_str = "|   VIEW: X <> | Y v^ |";
+            plane_str = "| VIEW: X <> | Y v^ |";
             coordinates[i].x = (int)((get_log_data(sim_log, time_seconds)[i].motion.position.x + offsetX) / pixel_sizeX) + (half_screen_sizeX);
             coordinates[i].y = (int)((get_log_data(sim_log, time_seconds)[i].motion.position.y + offsetY) / pixel_sizeY) + (half_screen_sizeY);
         }
         else if (plane == YZ)
         {
-            plane_str = "|   VIEW: Y <> | Z v^ |";
+            plane_str = "| VIEW: Y <> | Z v^ |";
             coordinates[i].x = ((get_log_data(sim_log, time_seconds)[i].motion.position.y + offsetY) / pixel_sizeX) + (half_screen_sizeX);
-            coordinates[i].y = ((get_log_data(sim_log, time_seconds)[i].motion.position.z) / pixel_sizeY) + (half_screen_sizeY);
+            coordinates[i].y = ((get_log_data(sim_log, time_seconds)[i].motion.position.z + offsetZ) / pixel_sizeY) + (half_screen_sizeY);
         }
         else if (plane == XZ)
         {
-            plane_str = "|   VIEW: X <> | Z v^ |";
+            plane_str = "| VIEW: X <> | Z v^ |";
             coordinates[i].x = ((get_log_data(sim_log, time_seconds)[i].motion.position.x + offsetX) / pixel_sizeX) + (half_screen_sizeX);
-            coordinates[i].y = ((get_log_data(sim_log, time_seconds)[i].motion.position.z) / pixel_sizeY) + (half_screen_sizeY);
+            coordinates[i].y = ((get_log_data(sim_log, time_seconds)[i].motion.position.z + offsetZ) / pixel_sizeY) + (half_screen_sizeY);
         }
     }
 
-
     printf("\n\n%s", display_time(time_seconds));
     printf("   ZOOM: \033[36m%4.3fx\033[0m   ", zoom);
-    printf("%s\n", plane_str);
-
+    printf("|   RESOLUTION: \033[36m%s\033[0m   ", format_number(pixel_sizeX));
+    printf("|   WIDTH: \033[36m%s\033[0m   |", format_number((RENDER_SIZE * 2) / zoom));
+    printf("\n%s\n", plane_str);
     int trailx;
     int traily;
+    double orbit_offsetX;
+    double orbit_offsetY;
+    double orbit_offsetZ;
+
     float ratio;
     double vx;
     double vy;
 
-    
+    // idea: introduce different colours for depth?
+
     for (int i = start / log_step; i < (end / log_step); i++)
     {
-        // movement relative to earth
-        offsetX = -1 * get_log_data(sim_log, i * log_step)[0].motion.position.x;
-        offsetY = -1 * get_log_data(sim_log, i * log_step)[0].motion.position.y;
+
+        if (motion_relative_to_object >= 0)
+        {
+
+            // movement relative to the object
+            orbit_offsetX = offsetX + (-1 * get_log_data(sim_log, i * log_step)[motion_relative_to_object].motion.position.x) +
+                            get_log_data(sim_log, time_seconds)[motion_relative_to_object].motion.position.x;
+
+            orbit_offsetY = offsetY + (-1 * get_log_data(sim_log, i * log_step)[motion_relative_to_object].motion.position.y) +
+                            get_log_data(sim_log, time_seconds)[motion_relative_to_object].motion.position.y;
+
+            orbit_offsetZ = offsetZ + (-1 * get_log_data(sim_log, i * log_step)[motion_relative_to_object].motion.position.z) +
+                            get_log_data(sim_log, time_seconds)[motion_relative_to_object].motion.position.z;
+        }
+        else
+        {
+            orbit_offsetX = offsetX;
+            orbit_offsetY = offsetY;
+            orbit_offsetZ = offsetZ;
+        }
 
         for (int j = 0; j < NO_OBJECTS; j++)
         {
+            double depth;
+
             if (plane == XY)
             {
-                trailx = (int)((get_log_data(sim_log, i * log_step)[j].motion.position.x + offsetX) / pixel_sizeX) + (half_screen_sizeX);
-                traily = (int)(NO_PIXELSY - 1) - (int)(((get_log_data(sim_log, i * log_step)[j].motion.position.y + offsetY) / pixel_sizeY) + (half_screen_sizeY));
+                trailx = (int)((get_log_data(sim_log, i * log_step)[j].motion.position.x + orbit_offsetX) / pixel_sizeX) + (half_screen_sizeX);
+                traily = (int)(NO_PIXELSY - 1) - (int)(((get_log_data(sim_log, i * log_step)[j].motion.position.y + orbit_offsetY) / pixel_sizeY) + (half_screen_sizeY));
             }
             else if (plane == YZ)
             {
-                trailx = ((get_log_data(sim_log, i * log_step)[j].motion.position.y + offsetY) / pixel_sizeX) + (half_screen_sizeX);
-                traily = (NO_PIXELSY - 1) - (int)(((get_log_data(sim_log, i * log_step)[j].motion.position.z) / pixel_sizeY) + (half_screen_sizeY));
-
+                trailx = ((get_log_data(sim_log, i * log_step)[j].motion.position.y + orbit_offsetY) / pixel_sizeX) + (half_screen_sizeX);
+                traily = (NO_PIXELSY - 1) - (int)(((get_log_data(sim_log, i * log_step)[j].motion.position.z + orbit_offsetZ) / pixel_sizeY) + (half_screen_sizeY));
             }
             else if (plane == XZ)
             {
-                trailx = ((get_log_data(sim_log, i * log_step)[j].motion.position.x + offsetX) / pixel_sizeX) + (half_screen_sizeX);
-                traily = (NO_PIXELSY - 1) - (int)(((get_log_data(sim_log, i * log_step)[j].motion.position.z) / pixel_sizeY) + (half_screen_sizeY));
+                trailx = ((get_log_data(sim_log, i * log_step)[j].motion.position.x + orbit_offsetX) / pixel_sizeX) + (half_screen_sizeX);
+                traily = (NO_PIXELSY - 1) - (int)(((get_log_data(sim_log, i * log_step)[j].motion.position.z + orbit_offsetZ) / pixel_sizeY) + (half_screen_sizeY));
             }
 
-        
             if (trailx >= 0 && trailx < NO_PIXELSX && traily >= 0 && traily < NO_PIXELSY)
             {
-                vx = get_log_data(sim_log, i * log_step)[j].motion.velocity.x;
-                vy = get_log_data(sim_log, i * log_step)[j].motion.velocity.y;
-                
+
+                // depth and slope for planes
+                if (plane == XY)
+                {
+                    depth = -1 * (get_log_data(sim_log, i * log_step)[j].motion.position.z);
+
+                    vx = get_log_data(sim_log, i * log_step)[j].motion.velocity.x;
+                    vy = get_log_data(sim_log, i * log_step)[j].motion.velocity.y;
+
+                }
+                else if (plane == YZ)
+                {
+                    depth = -1 * (get_log_data(sim_log, i * log_step)[j].motion.position.x);
+
+                    vx = get_log_data(sim_log, i * log_step)[j].motion.velocity.y;
+                    vy = get_log_data(sim_log, i * log_step)[j].motion.velocity.z;
+                }
+                else if (plane == XZ)
+                {
+                    depth = 1 * (get_log_data(sim_log, i * log_step)[j].motion.position.y);
+
+                    vx = get_log_data(sim_log, i * log_step)[j].motion.velocity.x;
+                    vy = get_log_data(sim_log, i * log_step)[j].motion.velocity.z;
+
+                }
+
+
+                if (!closest_initialised)
+                {
+                    closest = depth;
+                }
+                else if (depth < closest)
+                {
+                    closest = depth;
+                    closest_initialised = true;
+                }
+
+                depths[trailx][traily] = depth;
+                trail[trailx][traily] = 1;
+
+
+
+
                 if (fabs(vx) < 1e-6)
                     vx = 1e-6; // avoid division by zero
                 ratio = vy / (vx + 1.0);
 
-                if (ratio > 4.0) {
-                    slope_position[trailx][traily] = '|';   // steep upward
-                } else if (ratio > 0.5) {
-                    slope_position[trailx][traily] = '/';   // moderate upward
-                } else if (ratio > -0.5) {
-                    slope_position[trailx][traily] = '=';   // mostly horizontal
-                } else if (ratio > -4.0) {
-                    slope_position[trailx][traily] = '\\';  // moderate downward
-                } else {
-                    slope_position[trailx][traily] = '|';   // steep downward
+                if (ratio > 4.0)
+                {
+                    slope_position[trailx][traily] = '|'; // steep upward
+                }
+                else if (ratio > 0.5)
+                {
+                    slope_position[trailx][traily] = '/'; // moderate upward
+                }
+                else if (ratio > -0.5)
+                {
+                    slope_position[trailx][traily] = '='; // mostly horizontal
+                }
+                else if (ratio > -4.0)
+                {
+                    slope_position[trailx][traily] = '\\'; // moderate downward
+                }
+                else
+                {
+                    slope_position[trailx][traily] = '|'; // steep downward
                 }
 
-                trail[trailx][traily] = 1;
             }
-
         }
     }
-
 
     for (int y = 0; y < NO_PIXELSY; y++)
     {
         for (int x = 0; x < NO_PIXELSX; x++)
         {
-            
+
             for (int ob = 0; ob < NO_OBJECTS; ob++)
             {
                 if ((int)coordinates[ob].x == x && ((NO_PIXELSY - 1) - (int)coordinates[ob].y) == y)
@@ -540,15 +596,35 @@ void render_objects_advanced(Object *sim_log, int time_seconds ,int plane, float
                     printf(" \033[32m%c\033[0m ", get_log_data(sim_log, 0)[ob].symbol);
                     displayed = true;
                     break;
-
                 }
-                
             }
-            
+
             if (!displayed && trail[x][y] == 1)
             {
-                printf("\033[34m %c \033[0m", slope_position[x][y]);
+
+                if (depths[x][y] >= closest + (pixel_sizeX * 4))
+                {
+                    printf("\033[34m %c \033[0m", slope_position[x][y]); // blue
+                }
+                else if (depths[x][y] >= closest + (pixel_sizeX * 3))
+                {
+                    printf("\033[36m %c \033[0m", slope_position[x][y]); // cyan
+                }
+                else if (depths[x][y] >= closest + (pixel_sizeX * 2))
+                {
+                    printf("\033[32m %c \033[0m", slope_position[x][y]); // green
+                }
+                else if (depths[x][y] >= closest + pixel_sizeX)
+                {
+                    printf("\033[33m %c \033[0m", slope_position[x][y]); // orange/yellow
+                }
+                else
+                {
+                    printf("\033[31m %c \033[0m", slope_position[x][y]); // red (closest)
+                }
+
                 displayed = true;
+
             }
 
             if (!displayed)
@@ -557,19 +633,23 @@ void render_objects_advanced(Object *sim_log, int time_seconds ,int plane, float
             }
 
             displayed = false;
-
         }
-        
+
         printf("\n");
     }
-    
 }
 
-
-void render_objects_over_time(Object *sim_log, int plane, float zoom, int start, int end)
+void render_objects_over_time(Object *sim_log, int start, int end)
 {
     int time_seconds;
     int i = (start / render_step);
+
+    // plane hud's
+    char *hud_XY = "[ VIEW: 0 XY ( * ) | 1 YZ ( 90*> r90*< ) | 2 XZ ( 90*v ) ]";
+    char *hud_YZ = "[ VIEW: 0 XY ( 90*^ r90*< ) | 1 YZ ( * ) | 2 XZ ( 90*< ) ]";
+    char *hud_XZ = "[ VIEW: 0 XY ( 90*^ ) | 1 YZ ( 90*> ) | 2 XZ ( * ) ]";
+    char *plane_hud;
+
     char input;
     clear_input_buffer();
 
@@ -578,58 +658,71 @@ void render_objects_over_time(Object *sim_log, int plane, float zoom, int start,
 
     while (i < (end / render_step) + 1)
     {
+        char input_str[32];
         time_seconds = i * render_step;
-        //render_objects(get_log_data(sim_log, time_seconds), time_seconds, plane, zoom);
+        // render_objects(get_log_data(sim_log, time_seconds), time_seconds, plane, zoom);
 
-        // view focused on earth
-        offsetX = -1 * get_log_data(sim_log, time_seconds)[0].motion.position.x;
-        offsetY = -1 * get_log_data(sim_log, time_seconds)[0].motion.position.y;
+        render_objects_advanced(sim_log, time_seconds, start, end);
 
+        // change hud based on plane
+        switch (plane)
+        {
+        case XY:
+            plane_hud = hud_XY;
+            break;
+        case YZ:
+            plane_hud = hud_YZ;
+            break;
+        case XZ:
+            plane_hud = hud_XZ;
+            break;
+        }
 
-        render_objects_advanced(sim_log, time_seconds, plane, zoom, start, end);
-        printf("[ ENTER > ] [ b < ]   [ +ZOOM ] [ -ZOOM ]   [ 0 XY ] [ 1 YZ ] [ 2 XZ ]   [ QUIT ]");
+        printf("[ TIME: ENTER > | b < ]   [ ZOOM: - | z0 | + ]   %s   [ QUIT ]", plane_hud);
+        printf("\nCOMMAND: ");
 
         if (render_wait)
         {
-            input = getchar();
+            if (fgets(input_str, sizeof(input_str), stdin) == NULL)
+                return;
 
-            switch (input)
+            // Remove newline if present
+            input_str[strcspn(input_str, "\n")] = 0;
+
+            if (strcmp(input_str, "b") == 0)
             {
-            case 'b':
                 go_back = true;
-                clear_input_buffer();
-                break;
-
-            case '+':
+            }
+            else if (strcmp(input_str, "+") == 0)
+            {
                 paused = true;
                 zoom *= 2;
-                clear_input_buffer();
-                break;
-
-            case '-':
+            }
+            else if (strcmp(input_str, "-") == 0)
+            {
                 paused = true;
                 zoom /= 2;
-                clear_input_buffer();
-                break;
-
-            case '0':
-            case '1':
-            case '2':
-                paused = true;
-                plane = input - '0';
-                clear_input_buffer();
-                break;
-
-            case 'q':
-                return;
-    
-            default:
-                break;
             }
-
+            else if (input_str[0] == 'z')
+            {
+                zoom = pow(2, atoi(input_str + 1));
+            }
+            else if (strcmp(input_str, "0") == 0 || strcmp(input_str, "1") == 0 || strcmp(input_str, "2") == 0)
+            {
+                paused = true;
+                plane = input_str[0] - '0';
+            }
+            else if (strcmp(input_str, "q") == 0)
+            {
+                return;
+            }
+            else
+            {
+                // Unrecognized input
+            }
         }
-        
-        if(go_back)
+
+        if (go_back)
         {
             i--;
             go_back = false;
@@ -642,18 +735,14 @@ void render_objects_over_time(Object *sim_log, int plane, float zoom, int start,
         {
             paused = false;
         }
-
     }
 }
-
-
-
 
 /*
     utility
 */
 // converts the current time in seconds to a human readable time format
-char* display_time(int time_seconds)
+char *display_time(int time_seconds)
 {
     static char time_str[60];
     int days = 0;
@@ -679,15 +768,31 @@ char* display_time(int time_seconds)
     }
     else
     {
-        minutes = time_seconds;  // if HOUR_INTERVAL is 0, just show total steps as minutes
+        minutes = time_seconds; // if HOUR_INTERVAL is 0, just show total steps as minutes
     }
 
-    //printf("\n| DAY: %d | HOUR: %d | MINUTE: %d |\n", days, hours, minutes);
+    // printf("\n| DAY: %d | HOUR: %d | MINUTE: %d |\n", days, hours, minutes);
     snprintf(time_str, sizeof(time_str), "| TIME: DAY \033[36m%2d\033[0m | HOUR \033[36m%2d\033[0m | MINUTE \033[36m%2d\033[0m", days, hours, minutes);
     strcat(time_str, "\033[0m |");
     return time_str;
 }
 
+char *format_number(double number)
+{
+    static char number_str[60];
+    if (number >= 1e15)
+        snprintf(number_str, sizeof(number_str), "%.3e", number);
+    else if (number >= 1e12)
+        snprintf(number_str, sizeof(number_str), "%.2f T", number / 1e12);
+    else if (number >= 1e9)
+        snprintf(number_str, sizeof(number_str), "%.2f B", number / 1e9);
+    else if (number >= 1e6)
+        snprintf(number_str, sizeof(number_str), "%.2f M", number / 1e6);
+    else
+        snprintf(number_str, sizeof(number_str), "%.0f", number);
+
+    return number_str;
+}
 
 // displays the position of a given object
 void display_position(Object object)
@@ -695,9 +800,7 @@ void display_position(Object object)
     printf("\nx: %e", object.motion.position.x);
     printf("\ny: %e", object.motion.position.y);
     printf("\nz: %e\n", object.motion.position.z);
-
 };
-
 
 void display_all_information(Object objects[])
 {
@@ -716,26 +819,24 @@ void display_all_information(Object objects[])
         }
 
         printf("\nMass:");
-        printf("\nkg: %e", objects[i].mass);
+        printf("\nkg: %s", format_number(objects[i].mass));
 
         printf("\n\nPosition:");
-        printf("\nx: %e", objects[i].motion.position.x);
-        printf("\ny: %e", objects[i].motion.position.y);
-        printf("\nz: %e", objects[i].motion.position.z);
+        printf("\nx: %s", format_number(objects[i].motion.position.x));
+        printf("\ny: %s", format_number(objects[i].motion.position.y));
+        printf("\nz: %s", format_number(objects[i].motion.position.z));
 
         printf("\n\nVelocity:");
-        printf("\nx: %e", objects[i].motion.velocity.x);
-        printf("\ny: %e", objects[i].motion.velocity.y);
-        printf("\nz: %e", objects[i].motion.velocity.z);
+        printf("\nx: %s", format_number(objects[i].motion.velocity.x));
+        printf("\ny: %s", format_number(objects[i].motion.velocity.y));
+        printf("\nz: %s", format_number(objects[i].motion.velocity.z));
 
         printf("\n\nForce:");
-        printf("\nx: %e", objects[i].motion.force.x);
-        printf("\ny: %e", objects[i].motion.force.y);
-        printf("\nz: %e\n\n", objects[i].motion.force.z);
-
+        printf("\nx: %s", format_number(objects[i].motion.force.x));
+        printf("\ny: %s", format_number(objects[i].motion.force.y));
+        printf("\nz: %s\n\n", format_number(objects[i].motion.force.z));
     }
 };
-
 
 // returns true if step is at a given time interval
 bool is_interval(int interval, int step)
@@ -748,14 +849,12 @@ bool is_interval(int interval, int step)
     return step % interval == 0;
 }
 
-
-void clear_input_buffer() {
+void clear_input_buffer()
+{
     int c;
-    while ((c = getchar()) != '\n' && c != EOF);
+    while ((c = getchar()) != '\n' && c != EOF)
+        ;
 }
-
-
-
 
 /*
     ui
@@ -763,7 +862,6 @@ void clear_input_buffer() {
 int program_ui(Object *sim_log, Object initial_objects[], Object objects[])
 {
     intro();
-    printf("This should not be red \033[31mThis text is red!\033[0m This should also not be red\n");
     int user_choice = 0;
     do
     {
@@ -773,24 +871,28 @@ int program_ui(Object *sim_log, Object initial_objects[], Object objects[])
         printf("  - Exit the program (-1)\n");
         scanf("%d", &user_choice);
 
-        if (user_choice == 1)
+        switch (user_choice)
         {
+        case 1:
             simulation_ui(sim_log, initial_objects, objects);
-        }
-        else if (user_choice == 2)
-        {
+            break;
+
+        case 2:
             settings_ui();
+        default:
+            break;
         }
 
     } while (user_choice != -1);
-    
+
     return 0;
 }
-
 
 int simulation_ui(Object *sim_log, Object initial_objects[], Object objects[])
 {
     int user_choice;
+    int time_seconds, days, hours, minutes;
+    int time_seconds_start, time_seconds_end;
 
     menu_banner(1);
 
@@ -802,35 +904,33 @@ int simulation_ui(Object *sim_log, Object initial_objects[], Object objects[])
         printf("  - Render simulation for a period (3)\n");
         printf("  - Return to main menu (-1)\n");
 
-       
         scanf("%d", &user_choice);
+        switch (user_choice)
+        {
 
-        if (user_choice == 1)
-        {
-            //render_objects(&sim_log[0 * NO_OBJECTS],0, XY, 1);
-            render_objects_advanced(sim_log, 0, plane, zoom, 0, 0);
+        case 1:
+            render_objects_advanced(sim_log, 0, 0, 0);
             display_all_information(&sim_log[0 * NO_OBJECTS]);
-        }
-        else if (user_choice == 2)
-        {
-            user_choice = 0;
-            int time_seconds, days, hours, minutes;
+            break;
+
+        case 2:
             printf("\nThe current delta time is: %d seconds", delta_time);
             printf("\nThe current log step is: %d seconds", log_step);
             printf("\nHow long do you want to run the simulation for? Enter in the format: days hours minutes (e.g., 7 0 0):\n");
+
             scanf("%d %d %d", &days, &hours, &minutes);
+
             time_seconds = (days * DAY) + (hours * HOUR) + (minutes * MINUTE);
             time_scale = time_seconds;
-            simulate(sim_log, initial_objects ,objects, time_seconds);
+            simulate(sim_log, initial_objects, objects, time_seconds);
             printf("\nSimulation successfully ran for %s\n", display_time(time_seconds));
-        }
-        else if (user_choice == 3)
-        {
-            int time_seconds_start, time_seconds_end, days, hours, minutes;
+            break;
+
+        case 3:
             printf("\nThe current delta time is: %d seconds", delta_time);
             printf("\nThe current log step is: %d seconds", log_step);
             printf("\nThe current render step is: %s", display_time(render_step));
-            printf("\nThe simulation has ran for: %s", display_time(time_scale)); 
+            printf("\nThe simulation has ran for: %s", display_time(time_scale));
             printf("\nBetween what two times do you want to render the simulation for? Enter in the format: days hours minutes (e.g., 7 0 0):\n");
 
             printf("Start: ");
@@ -840,19 +940,21 @@ int simulation_ui(Object *sim_log, Object initial_objects[], Object objects[])
             printf("\nEnd: ");
             scanf("%d %d %d", &days, &hours, &minutes);
             time_seconds_end = (days * DAY) + (hours * HOUR) + (minutes * MINUTE);
-            
-            render_objects_over_time(sim_log, plane, zoom, time_seconds_start, time_seconds_end);
+
+            render_objects_over_time(sim_log, time_seconds_start, time_seconds_end);
+            break;
+
+        default:
+            break;
         }
 
     } while (user_choice != -1);
-    
+
     menu_banner(0);
 }
 
-
 int settings_ui()
 {
-    int time_seconds, days, hours, minutes;
     int user_choice;
     menu_banner(2);
 
@@ -865,147 +967,178 @@ int settings_ui()
 
         scanf("%d", &user_choice);
 
-        if (user_choice == 1)
+        switch (user_choice)
         {
-            
-            printf("\nHere are your options:\n");
-            printf("  - Adjust delta time (1)\n");
-            printf("  - Adjust log step (2)\n");
-            printf("  - Return to previous menu (-1)\n");
+        case 1:
+            simulation_settings_ui();
+            break;
 
-            scanf("%d", &user_choice);
-            
-            if (user_choice == 1)
-            {
-                
-                printf("\nDelta time refers to how often the simulation is updated. It can be thought of as the accuracy of the simulation\n");
-                printf("The current delta time is %d seconds, meaning the simulation updates every %d seconds", delta_time, delta_time);
-                printf("\nWhat do you want delta time to be? Enter in the format: days hours minutes (e.g., 7 0 0):\n");
-                scanf("%d %d %d", &days, &hours, &minutes);
+        case 2:
+            render_settings_ui();
+            break;
 
-                time_seconds = (days * DAY) + (hours * HOUR) + (minutes * MINUTE);
-
-                if (time_seconds == 0)
-                {
-                    delta_time = MINUTE;
-                }
-                else
-                {
-                    if (time_seconds > log_step)
-                    {
-                        log_step = time_seconds;
-                    }
-                    delta_time = time_seconds;
-                }
-                
-                printf("\ndelta time reassigned successfully! Delta time is: %d seconds\n", delta_time);
-
-            }
-            else if (user_choice == 2)
-            {
-                printf("\nLog step refers to how often an entry is written into the simulation record\n");
-                printf("The current log step is %d seconds, meaning the simulation record is written into every %d seconds", log_step, log_step);
-                printf("\nWhat do you want log step to be? Enter in the format: days hours minutes (e.g., 7 0 0):\n");
-                scanf("%d %d %d", &days, &hours, &minutes);
-
-                time_seconds = (days * DAY) + (hours * HOUR) + (minutes * MINUTE);
-                if (time_seconds < delta_time || time_seconds == 0)
-                {
-                    log_step = delta_time;
-                }
-                else
-                {
-                    log_step = time_seconds;
-                }
-                
-                printf("\nlog step reassigned successfully! log step is: %d seconds\n", log_step);
-            }
-
-            user_choice = 0;
-            
-
-        }
-        else if (user_choice == 2)
-        {
-            printf("\nHere are your options:\n");
-            printf("  - Adjust render step (1)\n");
-            printf("  - Adjust zoom level (2)\n");
-            printf("  - Change coordinate plane (3)\n");
-            printf("  - Change walkthrough settings (4)\n");
-            printf("  - Return to previous menu (-1)\n");
-
-            scanf("%d", &user_choice);
-
-            if (user_choice == 1)
-            {
-                printf("\nRender step refers to how often images are displayed\n");
-                printf("The current render step is %s meaning that images are displayed at intervals of %s", display_time(render_step), display_time(render_step));
-                printf("\nWhat do you want the render step to be? Enter in the format: days hours minutes (e.g., 7 0 0):\n");
-                scanf("%d %d %d", &days, &hours, &minutes);
-                time_seconds = (days * DAY) + (hours * HOUR) + (minutes * MINUTE);
-
-                render_step = time_seconds;
-
-                printf("\nRender step reassigned successfully! Render step is %s\n", display_time(render_step));
-            }
-            else if (user_choice == 2)
-            {
-                printf("\nZoom level refers to how zoomed in the images are rendered\n");
-                printf("The current zoom level is: %d", zoom);
-                printf("\nWhat do you want the zoom level to be?\n");
-                scanf("%d", &zoom);
-
-                printf("\nZoom level reassigned successfully! Zoom step is %d\n", zoom);
-                
-            }
-            else if (user_choice == 3)
-            {
-                char *plane_str;
-                if (plane == XY)
-                {
-                    plane_str = "XY";
-                }
-                else if (plane == YZ)
-                {
-                    plane_str = "YZ";
-                }
-                else
-                {
-                    plane_str = "XZ";
-                }
-
-
-
-                printf("\nCoordinate plane refers to what two axes make the rendered image\n");
-                printf("The current coordinate plane is: %s", plane_str);
-                printf("\nWhat do you want the coordinate plane to be? XY(0), YZ(1) or XZ(2)\n");
-                scanf("%d", &plane);
-
-                printf("\nCoordinate plane changed successfully!\n");
-            }
-            else if (user_choice == 4)
-            {
-                printf("\nWalkthrough refers to if you want for each image to stay on the screen until dismissed\n");
-                printf("\nThe current walkthrough setting is: %d", render_wait);
-                printf("\nWhat do you want the walkthrough setting to be? True(1) or false(0)\n");
-                scanf("%d", &render_wait);
-
-                printf("\nWalkthrough setting changed successfully!\n");
-            }
-            
-            user_choice = 0;
+        default:
+            break;
         }
 
     } while (user_choice != -1);
-    
+
     menu_banner(0);
 
     return 0;
 }
 
+int simulation_settings_ui()
+{
+    int user_choice;
+    int time_seconds, days, hours, minutes;
+
+    do
+    {
+        printf("\nHere are your options:\n");
+        printf("  - Adjust delta time (1)\n");
+        printf("  - Adjust log step (2)\n");
+        printf("  - Return to previous menu (-1)\n");
+
+        scanf("%d", &user_choice);
+
+        switch (user_choice)
+        {
+        case 1:
+            printf("\nDelta time refers to how often the simulation is updated. It can be thought of as the accuracy of the simulation\n");
+            printf("The current delta time is %d seconds, meaning the simulation updates every %d seconds", delta_time, delta_time);
+            printf("\nWhat do you want delta time to be? Enter in the format: days hours minutes (e.g., 7 0 0):\n");
+            scanf("%d %d %d", &days, &hours, &minutes);
+
+            time_seconds = (days * DAY) + (hours * HOUR) + (minutes * MINUTE);
+
+            if (time_seconds == 0)
+            {
+                delta_time = MINUTE;
+            }
+            else
+            {
+                if (time_seconds > log_step)
+                {
+                    log_step = time_seconds;
+                }
+                delta_time = time_seconds;
+            }
+
+            printf("\ndelta time reassigned successfully! Delta time is: %d seconds\n", delta_time);
+            break;
+
+        case 2:
+            printf("\nLog step refers to how often an entry is written into the simulation record\n");
+            printf("The current log step is %d seconds, meaning the simulation record is written into every %d seconds", log_step, log_step);
+            printf("\nWhat do you want log step to be? Enter in the format: days hours minutes (e.g., 7 0 0):\n");
+            scanf("%d %d %d", &days, &hours, &minutes);
+
+            time_seconds = (days * DAY) + (hours * HOUR) + (minutes * MINUTE);
+            if (time_seconds < delta_time || time_seconds == 0)
+            {
+                log_step = delta_time;
+            }
+            else
+            {
+                log_step = time_seconds;
+            }
+
+            printf("\nlog step reassigned successfully! log step is: %d seconds\n", log_step);
+            break;
+
+        default:
+            break;
+        }
+
+    } while (user_choice != -1);
+
+    return 0;
+}
+
+int render_settings_ui()
+{
+    int user_choice;
+
+    int time_seconds, days, hours, minutes;
+    char *plane_str;
+
+    do
+    {
+        printf("\nHere are your options:\n");
+        printf("  - Adjust render step (1)\n");
+        printf("  - Adjust zoom level (2)\n");
+        printf("  - Change coordinate plane (3)\n");
+        printf("  - Change walkthrough settings (4)\n");
+        printf("  - Return to previous menu (-1)\n");
+
+        scanf("%d", &user_choice);
+
+        switch (user_choice)
+        {
+        case 1:
+            printf("\nRender step refers to how often images are displayed\n");
+            printf("The current render step is %s meaning that images are displayed at intervals of %s", display_time(render_step), display_time(render_step));
+            printf("\nWhat do you want the render step to be? Enter in the format: days hours minutes (e.g., 7 0 0):\n");
+            scanf("%d %d %d", &days, &hours, &minutes);
+            time_seconds = (days * DAY) + (hours * HOUR) + (minutes * MINUTE);
+
+            render_step = time_seconds;
+
+            printf("\nRender step reassigned successfully! Render step is %s\n", display_time(render_step));
+            break;
+
+        case 2:
+            printf("\nZoom level refers to how zoomed in the images are rendered\n");
+            printf("The current zoom level is: %d", zoom);
+            printf("\nWhat do you want the zoom level to be?\n");
+            scanf("%d", &zoom);
+
+            printf("\nZoom level reassigned successfully! Zoom step is %d\n", zoom);
+            break;
+
+        case 3:
+            if (plane == XY)
+            {
+                plane_str = "XY";
+            }
+            else if (plane == YZ)
+            {
+                plane_str = "YZ";
+            }
+            else
+            {
+                plane_str = "XZ";
+            }
+
+            printf("\nCoordinate plane refers to what two axes make the rendered image\n");
+            printf("The current coordinate plane is: %s", plane_str);
+            printf("\nWhat do you want the coordinate plane to be? XY(0), YZ(1) or XZ(2)\n");
+            scanf("%d", &plane);
+
+            printf("\nCoordinate plane changed successfully!\n");
+            break;
+
+        case 4:
+            printf("\nWalkthrough refers to if you want for each image to stay on the screen until dismissed\n");
+            printf("\nThe current walkthrough setting is: %d", render_wait);
+            printf("\nWhat do you want the walkthrough setting to be? True(1) or false(0)\n");
+            scanf("%d", &render_wait);
+
+            printf("\nWalkthrough setting changed successfully!\n");
+            break;
+
+        default:
+            break;
+        }
+
+    } while (user_choice != -1);
+
+    return 0;
+}
 
 void menu_banner(int menu)
-{   
+{
     int border_length = 50;
     char *string;
 
@@ -1037,9 +1170,8 @@ void menu_banner(int menu)
     }
 }
 
-
 void intro()
-{   
+{
     int border_length = 50;
     for (int i = 0; i < border_length; i++)
     {
@@ -1055,4 +1187,3 @@ void intro()
 
     printf("\nBy Aleks Zygarlowski\n\n\n");
 }
-
