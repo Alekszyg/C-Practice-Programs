@@ -51,7 +51,7 @@ double cameraY = 0;
 
 
 int view_focused_object = -1;      // what object is the view focused on
-int motion_relative_to_object = 0; // displays motion relative to this object
+int motion_relative_to_object = -1; // displays motion relative to this object
 
 
 int plane = XY; //

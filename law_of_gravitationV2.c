@@ -457,6 +457,7 @@ void render_objects_static(Object *sim_log, int time_seconds)
         for (int y = 0; y < NO_PIXELSY; y++)
         {
             trail[x][y] = 0;
+            depths[x][y] = 0;
         }
     }
 
@@ -489,7 +490,7 @@ void render_objects_static(Object *sim_log, int time_seconds)
         depth_ratio_y = camera.angular_resolution_y / object_angle_size_y;
         
 
-        if (depth_ratio_x >= 0 && depth_ratio_y >= 0)
+        if (depth_ratio_x > 0 && depth_ratio_y > 0)
         {
             display_pixel[i].x = (int)((rot_display_position.x / (camera.pixel_size_x * depth_ratio_x)) + (half_screen_sizeX));
             display_pixel[i].y = (int)((camera.no_pixelsY) - ((rot_display_position.y / (camera.pixel_size_y * depth_ratio_y )) + (half_screen_sizeY)));
@@ -508,11 +509,9 @@ void render_objects_static(Object *sim_log, int time_seconds)
     for (int i = 0; i < (time_scale / log_step); i++)
     {
         
-
-        Vec3 orbit_offset = (Vec3){0,0,0};
+        Vec3 orbit_offset = (Vec3){0.0f,0.0f,0.0f};
         Vec3 rot_display_position; // perceived location when dispalying, rotated
         double object_depth;
-        double depth_ratio;
 
         if (motion_relative_to_object >= 0)
         {
@@ -558,9 +557,7 @@ void render_objects_static(Object *sim_log, int time_seconds)
 
 
 
-                
-
-            if (trailx >= 0 && trailx < NO_PIXELSX && traily >= 0 && traily < NO_PIXELSY && (depth_ratio_x >= 0 && depth_ratio_y >= 0))
+            if (trailx >= 0 && trailx < NO_PIXELSX && traily >= 0 && traily < NO_PIXELSY && (depth_ratio_x > 0 && depth_ratio_y > 0))
             {
                 Vec3 velocity;
                 Vec3 vrot;
@@ -574,22 +571,34 @@ void render_objects_static(Object *sim_log, int time_seconds)
                 if (!closest_initialised)
                 {
                     closest = object_depth;
+                    closest_initialised = true;
+                    printf("trailx: %d", trailx);
+                    printf("traily: %d\n", traily);
                 }
                 else if (object_depth < closest)
                 {
                     closest = object_depth;
-                    closest_initialised = true;
                 }
 
-                depths[trailx][traily] = object_depth;
-                trail[trailx][traily] = 1;
-
+                
+                if (trail[trailx][traily] == 1)
+                {
+                    if (object_depth < depths[trailx][traily])
+                    {
+                        depths[trailx][traily] = object_depth;
+                    }
+                }
+                else
+                {
+                    trail[trailx][traily] = 1;
+                    depths[trailx][traily] = object_depth;
+                } 
 
 
 
                 if (fabs(vrot.x) < 1e-6)
                     vrot.x = 1e-6; // avoid division by zero
-                ratio = vrot.y / (vrot.x + 1.0);
+                ratio = vrot.y / vrot.x;
 
                 if (ratio > 4.0)
                 {
@@ -616,7 +625,7 @@ void render_objects_static(Object *sim_log, int time_seconds)
         }
     }
     
-    char frame[1];
+    char frame[FRAME_BUFFER_SIZE];
     int idx = 0;
 
     // Clear & home ANSI codes
@@ -656,17 +665,24 @@ void render_objects_static(Object *sim_log, int time_seconds)
                 char c = slope_position[x][y];
                 double d = depths[x][y];
                 
-                if (d > closest + (camera.pixel_size_x * 4))
-                    idx += sprintf(&frame[idx], "\033[34m %c \033[0m", c); // blue
-                else if (d > closest + (camera.pixel_size_x * 3))
+                // Avoid divide-by-zero
+                double fraction = (closest > 1e-9) ? ((d - closest) / closest) : 0.0;
+
+                // Clamp to non-negative
+                if (fraction < 0) fraction = 0;
+
+                            // Depth → colour based on fractional distance
+                if (fraction > 1.0)      // >100% farther
+                    idx += sprintf(&frame[idx], "\033[34m %c \033[0m", c); // blue (very far)
+                else if (fraction > 0.50) // +50% farther
                     idx += sprintf(&frame[idx], "\033[36m %c \033[0m", c); // cyan
-                else if (d > closest + (camera.pixel_size_x * 2))
+                else if (fraction > 0.25) // +25% farther
                     idx += sprintf(&frame[idx], "\033[32m %c \033[0m", c); // green
-                else if (d > closest + camera.pixel_size_x)
-                    idx += sprintf(&frame[idx], "\033[33m %c \033[0m", c); // orange
-                else
-                    idx += sprintf(&frame[idx], "\033[31m %c \033[0m", c); // red
-                
+                else if (fraction > 0.10) // +10% farther
+                    idx += sprintf(&frame[idx], "\033[33m %c \033[0m", c); // yellow/orange
+                else                     // within +10% of the closest
+                    idx += sprintf(&frame[idx], "\033[31m %c \033[0m", c); // red (very near)
+
                 drawn = true;
             }
 
@@ -730,7 +746,7 @@ char render_interactive(Object *sim_log, int time_seconds, bool have_time_contro
         }
         else if (input_str[0] == 'z')
         {
-            zoom = pow(2, atoi(input_str + 1));
+            zoom = pow(2, atof(input_str + 1));
         }
         else if (strcmp(input_str, "i") == 0)
         {
