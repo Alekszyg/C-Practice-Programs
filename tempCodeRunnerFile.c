@@ -1,0 +1,1 @@
+(camera.view_size / camera.no_pixelsX) / camera.view_size)

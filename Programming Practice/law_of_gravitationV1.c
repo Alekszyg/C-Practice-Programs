@@ -13,6 +13,7 @@
 // simulation constants
 #define NO_OBJECTS 3
 const double GRAVITATIONAL_CONSTANT = 6.67430e-11;
+#define M_PI 3.14159265358979323846
 
 // simulation configuration
 int delta_time = MINUTE;     // simulaton step duration
@@ -41,11 +42,17 @@ enum Planes
 int render_step = DAY;   // how often rendering occurs
 bool render_wait = true; // pause after each render
 float zoom = 1;          // render zoom level
-double offsetX = 0;
-double offsetY = 0;
-double offsetZ = 0;
+double view_offsetX = 0;
+double view_offsetY = 0;
+double view_offsetZ = 0;
+double cameraX = 0;
+double cameraY = 0;
+
+
+
 int view_focused_object = -1;      // what object is the view focused on
 int motion_relative_to_object = 0; // displays motion relative to this object
+
 
 int plane = XY; //
 
@@ -69,6 +76,9 @@ typedef struct
 
 } Object;
 
+Vec3 degrees = (Vec3){0, 0, 0};
+// x and z verified
+
 // core physics
 double distance(Object, Object);
 void apply_gravitational_forces(Object *, Object *);
@@ -86,14 +96,20 @@ Object *get_log_data(Object *sim_log, int time_seconds);
 void simulate(Object *sim_log, Object initial_objects[], Object objects[], int time_seconds);
 
 // rendering
-void render_objects(Object[], int time_seconds, int plane, float zoom);
-void render_objects_advanced(Object *sim_log, int time_seconds, int start, int end);
-void render_objects_over_time(Object *sim_log, int start, int end);
+void render_objects_static(Object *sim_log, int time_seconds);
+char render_interactive(Object *sim_log, int time_seconds, bool have_time_control);
+void render_objects_playback(Object *sim_log, int start, int end);
+void rotate_point(double*, Vec3, Vec3);
+Vec3 rotate_z_up(Vec3 v, double spin_deg, double pitch_deg);
+Vec3 rotate_z_up_pivot(Vec3 v, Vec3 pivot, double spin_deg, double pitch_deg);
+Vec3 pan_camera_relative(double dx, double dy, double move);
+Vec3 rotate_point_2d(Vec3 p, double angle_degrees);
 
 // utility
 bool is_interval(int, int);
 char *display_time(int);
 char *format_number(double number);
+double calculate_resolution();
 void display_position(Object);
 void display_all_information(Object objects[]);
 void clear_input_buffer();
@@ -124,7 +140,7 @@ int main()
 
     // Earth - orbiting speed 30,000
     objects[0].mass = 5.972e24; // kg
-    objects[0].motion.position = (Vec3){0.0f, 0.0f, 0.0f};
+    objects[0].motion.position = (Vec3){0.0f, 0.0f, 0.0};
     objects[0].motion.velocity = (Vec3){0.0f, 0.0f, 0.0f};
     objects[0].motion.force = (Vec3){0.0f, 0.0f, 0.0f};
     objects[0].symbol = 'E';
@@ -157,7 +173,9 @@ int main()
 
     // set initial values
     simulate(simulation_log, initial_objects, objects, time_scale);
+    render_interactive(simulation_log, 0, false);
     program_ui(simulation_log, initial_objects, objects);
+    
     /*
     // i timestep = delta_time
     for (int i = 0; i < (time_scale / delta_time) + 1; i++)
@@ -322,73 +340,53 @@ void simulate(Object *sim_log, Object initial_objects[], Object objects[], int t
     rendering
 */
 // renders all the objects in ASCII in a given area
-void render_objects(Object objects[], int time_seconds, int plane, float zoom)
+void render_objects_static(Object *sim_log, int time_seconds)
 {
-    char *plane_str;
-
-    Vec3 coordinates[NO_OBJECTS];
-    bool displayed = false;
+    Vec3 cameraresult;
+    Vec3 static old_angle = (Vec3){0,0,0};
+    Vec3 static rotation_offset = (Vec3){0,0,0};
+    Vec3 cameracoords;
 
     // number of pixels from the middle to the end
     int half_screen_sizeX = NO_PIXELSX / 2;
     int half_screen_sizeY = NO_PIXELSY / 2;
 
-    int pixel_sizeX = (RENDER_SIZE / half_screen_sizeX) / zoom;
-    int pixel_sizeY = (RENDER_SIZE / half_screen_sizeY) / zoom;
+    double pixel_sizeX = ((double)RENDER_SIZE / half_screen_sizeX) / zoom;
+    double pixel_sizeY = ((double)RENDER_SIZE / half_screen_sizeY) / zoom;
 
-    for (int i = 0; i < NO_OBJECTS; i++)
+
+    
+    
+    if (degrees.x != old_angle.x || degrees.y != old_angle.y || degrees.z != old_angle.z)
     {
-        if (plane == XY)
-        {
-            plane_str = "|   VIEW: X <> | Y v^ |";
-            coordinates[i].x = ((objects[i].motion.position.x + offsetX) / pixel_sizeX) + (half_screen_sizeX);
-            coordinates[i].y = ((objects[i].motion.position.y + offsetY) / pixel_sizeY) + (half_screen_sizeY);
-        }
-        else if (plane == YZ)
-        {
-            plane_str = "|   VIEW: Y <> | Z v^ |";
-            coordinates[i].x = ((objects[i].motion.position.y + offsetX) / pixel_sizeX) + (half_screen_sizeX);
-            coordinates[i].y = ((objects[i].motion.position.z + offsetY) / pixel_sizeY) + (half_screen_sizeY);
-        }
-        else if (plane == XZ)
-        {
-            plane_str = "|   VIEW: X <> | Z v^ |";
-            coordinates[i].x = ((objects[i].motion.position.x + offsetX) / pixel_sizeX) + (half_screen_sizeX);
-            coordinates[i].y = ((objects[i].motion.position.z + offsetY) / pixel_sizeY) + (half_screen_sizeY);
-        }
+        cameracoords = (Vec3){cameraX, cameraY, 0};
+        cameraresult = rotate_point_2d(cameracoords, old_angle.z);
+        
+        old_angle = degrees;
+        
+        rotation_offset.x += (cameraresult.x * zoom * pixel_sizeX);
+        rotation_offset.y += (cameraresult.y * zoom * pixel_sizeX);
+        rotation_offset.z = 0; //1e10f;
+
+        cameraX = 0;
+        cameraY = 0;
     }
+    
+    printf("rotationx: %lf", rotation_offset.x);
+    printf("rotationy: %lf", rotation_offset.y);
+    printf("CameraX: %lf", cameraX);
+    printf("CameraY: %lf", cameraY);
+    
+    
+    
+    
 
-    printf("\n\n%s", display_time(time_seconds));
-    printf("   ZOOM: \033[36m%4.2fx\033[0m   ", zoom);
-    printf("%s\n", plane_str);
-    for (int y = 0; y < NO_PIXELSY; y++)
-    {
-        for (int x = 0; x < NO_PIXELSX; x++)
-        {
-            for (int ob = 0; ob < NO_OBJECTS; ob++)
-            {
-                if ((int)coordinates[ob].x == x && ((NO_PIXELSY - 1) - (int)coordinates[ob].y) == y)
-                {
-                    printf(" %c ", objects[ob].symbol);
-                    displayed = true;
-                    break;
-                }
-            }
 
-            if (!displayed)
-            {
-                printf(" . ");
-            }
+    Vec3 object_offset = (Vec3){rotation_offset.x, -rotation_offset.y, -rotation_offset.z};
 
-            displayed = false;
-        }
+    printf("object_offset.y: %lf", object_offset.y);
+    printf("view_offsetY: %lf", view_offsetY);
 
-        printf("\n");
-    }
-}
-
-void render_objects_advanced(Object *sim_log, int time_seconds, int start, int end)
-{
     char *plane_str;
     Vec3 coordinates[NO_OBJECTS];
     int trail[NO_PIXELSX][NO_PIXELSY];
@@ -399,16 +397,16 @@ void render_objects_advanced(Object *sim_log, int time_seconds, int start, int e
 
     bool closest_initialised = false;
 
+    //rotation_offset.x = (cameraX * zoom * pixel_sizeX);
+    //rotation_offset.y = (cameraY * zoom * pixel_sizeX);
+
+    printf("cameraX: %lf", cameraX);
+
     if (view_focused_object >= 0)
     {
-        offsetX = -1 * get_log_data(sim_log, time_seconds)[view_focused_object].motion.position.x;
-        offsetY = -1 * get_log_data(sim_log, time_seconds)[view_focused_object].motion.position.y;
-        offsetZ = -1 * get_log_data(sim_log, time_seconds)[view_focused_object].motion.position.z;
-    }
-    else
-    {
-        offsetX = 0;
-        offsetY = 0;
+        object_offset.x = -1 * get_log_data(sim_log, time_seconds)[view_focused_object].motion.position.x + (rotation_offset.x);
+        object_offset.y = -1 * get_log_data(sim_log, time_seconds)[view_focused_object].motion.position.y - (rotation_offset.y);
+        object_offset.z = -1 * get_log_data(sim_log, time_seconds)[view_focused_object].motion.position.z - (rotation_offset.z);
     }
 
     for (int x = 0; x < NO_PIXELSX; x++)
@@ -420,33 +418,43 @@ void render_objects_advanced(Object *sim_log, int time_seconds, int start, int e
     }
 
     bool displayed = false;
-
-    // number of pixels from the middle to the end
-    int half_screen_sizeX = NO_PIXELSX / 2;
-    int half_screen_sizeY = NO_PIXELSY / 2;
-
-    double pixel_sizeX = ((double)RENDER_SIZE / half_screen_sizeX) / zoom;
-    double pixel_sizeY = ((double)RENDER_SIZE / half_screen_sizeY) / zoom;
+    double rotated[3];
 
     for (int i = 0; i < NO_OBJECTS; i++)
     {
         if (plane == XY)
         {
+            
+            Vec3 point;
+            Vec3 result;
+
+            point.x = get_log_data(sim_log, time_seconds)[i].motion.position.x + object_offset.x;
+            point.y = get_log_data(sim_log, time_seconds)[i].motion.position.y + object_offset.y;
+            point.z = get_log_data(sim_log, time_seconds)[i].motion.position.z + object_offset.z;
+
+
+            //rotate_point(rotated, point, degrees);
+            result = rotate_z_up(point, degrees.z, degrees.x);
+            //result = rotate_z_up_pivot(point, cameracoords, degrees.z, degrees.x);
+
+            coordinates[i].x = ((int)((result.x) / pixel_sizeX) + (half_screen_sizeX)) + (cameraX * zoom); // + (resultcoords.x);
+            coordinates[i].y = ((int)((result.y) / pixel_sizeY) + (half_screen_sizeY)) - (cameraY * zoom); // - (resultcoords.y);
             plane_str = "| VIEW: X <> | Y v^ |";
-            coordinates[i].x = (int)((get_log_data(sim_log, time_seconds)[i].motion.position.x + offsetX) / pixel_sizeX) + (half_screen_sizeX);
-            coordinates[i].y = (int)((get_log_data(sim_log, time_seconds)[i].motion.position.y + offsetY) / pixel_sizeY) + (half_screen_sizeY);
+
+            //coordinates[i].x = (int)((get_log_data(sim_log, time_seconds)[i].motion.position.x + object_offset.x) / pixel_sizeX) + (half_screen_sizeX);
+            //coordinates[i].y = (int)((get_log_data(sim_log, time_seconds)[i].motion.position.y + object_offset.y) / pixel_sizeY) + (half_screen_sizeY);
         }
         else if (plane == YZ)
         {
             plane_str = "| VIEW: Y <> | Z v^ |";
-            coordinates[i].x = ((get_log_data(sim_log, time_seconds)[i].motion.position.y + offsetY) / pixel_sizeX) + (half_screen_sizeX);
-            coordinates[i].y = ((get_log_data(sim_log, time_seconds)[i].motion.position.z + offsetZ) / pixel_sizeY) + (half_screen_sizeY);
+            coordinates[i].x = ((get_log_data(sim_log, time_seconds)[i].motion.position.y + object_offset.y) / pixel_sizeX) + (half_screen_sizeX);
+            coordinates[i].y = ((get_log_data(sim_log, time_seconds)[i].motion.position.z + object_offset.z) / pixel_sizeY) + (half_screen_sizeY);
         }
         else if (plane == XZ)
         {
             plane_str = "| VIEW: X <> | Z v^ |";
-            coordinates[i].x = ((get_log_data(sim_log, time_seconds)[i].motion.position.x + offsetX) / pixel_sizeX) + (half_screen_sizeX);
-            coordinates[i].y = ((get_log_data(sim_log, time_seconds)[i].motion.position.z + offsetZ) / pixel_sizeY) + (half_screen_sizeY);
+            coordinates[i].x = ((get_log_data(sim_log, time_seconds)[i].motion.position.x + object_offset.x) / pixel_sizeX) + (half_screen_sizeX);
+            coordinates[i].y = ((get_log_data(sim_log, time_seconds)[i].motion.position.z + object_offset.z) / pixel_sizeY) + (half_screen_sizeY);
         }
     }
 
@@ -457,37 +465,35 @@ void render_objects_advanced(Object *sim_log, int time_seconds, int start, int e
     printf("\n%s\n", plane_str);
     int trailx;
     int traily;
-    double orbit_offsetX;
-    double orbit_offsetY;
-    double orbit_offsetZ;
+
+    double orbit_offsetX = object_offset.x;
+    double orbit_offsetY = object_offset.y;
+    double orbit_offsetZ = object_offset.z;
 
     float ratio;
-    double vx;
-    double vy;
 
     // idea: introduce different colours for depth?
 
-    for (int i = start / log_step; i < (end / log_step); i++)
+    for (int i = 0; i < (time_scale / log_step); i++)
     {
+        
 
+        Vec3 point;
+        Vec3 result;
+        double rotated[3];
         if (motion_relative_to_object >= 0)
         {
+            
 
             // movement relative to the object
-            orbit_offsetX = offsetX + (-1 * get_log_data(sim_log, i * log_step)[motion_relative_to_object].motion.position.x) +
+            orbit_offsetX = object_offset.x + (-1 * get_log_data(sim_log, i * log_step)[motion_relative_to_object].motion.position.x) +
                             get_log_data(sim_log, time_seconds)[motion_relative_to_object].motion.position.x;
 
-            orbit_offsetY = offsetY + (-1 * get_log_data(sim_log, i * log_step)[motion_relative_to_object].motion.position.y) +
+            orbit_offsetY = object_offset.y + (-1 * get_log_data(sim_log, i * log_step)[motion_relative_to_object].motion.position.y) +
                             get_log_data(sim_log, time_seconds)[motion_relative_to_object].motion.position.y;
 
-            orbit_offsetZ = offsetZ + (-1 * get_log_data(sim_log, i * log_step)[motion_relative_to_object].motion.position.z) +
+            orbit_offsetZ = object_offset.z + (-1 * get_log_data(sim_log, i * log_step)[motion_relative_to_object].motion.position.z) +
                             get_log_data(sim_log, time_seconds)[motion_relative_to_object].motion.position.z;
-        }
-        else
-        {
-            orbit_offsetX = offsetX;
-            orbit_offsetY = offsetY;
-            orbit_offsetZ = offsetZ;
         }
 
         for (int j = 0; j < NO_OBJECTS; j++)
@@ -496,8 +502,16 @@ void render_objects_advanced(Object *sim_log, int time_seconds, int start, int e
 
             if (plane == XY)
             {
-                trailx = (int)((get_log_data(sim_log, i * log_step)[j].motion.position.x + orbit_offsetX) / pixel_sizeX) + (half_screen_sizeX);
-                traily = (int)(NO_PIXELSY - 1) - (int)(((get_log_data(sim_log, i * log_step)[j].motion.position.y + orbit_offsetY) / pixel_sizeY) + (half_screen_sizeY));
+                
+                point.x = get_log_data(sim_log, i * log_step)[j].motion.position.x + orbit_offsetX;
+                point.y = get_log_data(sim_log, i * log_step)[j].motion.position.y + orbit_offsetY;
+                point.z = get_log_data(sim_log, i * log_step)[j].motion.position.z + orbit_offsetZ;
+
+                rotate_point(rotated, point, degrees);
+                result = rotate_z_up(point, degrees.z, degrees.x);
+
+                trailx = (int)((result.x) / pixel_sizeX) + (half_screen_sizeX) + (cameraX * zoom);
+                traily = (int)((NO_PIXELSY - 1) - ((int)(((result.y) / pixel_sizeY) + (half_screen_sizeY)))) + (cameraY * zoom);
             }
             else if (plane == YZ)
             {
@@ -513,11 +527,24 @@ void render_objects_advanced(Object *sim_log, int time_seconds, int start, int e
             if (trailx >= 0 && trailx < NO_PIXELSX && traily >= 0 && traily < NO_PIXELSY)
             {
 
+                Vec3 velocity;
+                Vec3 vrot;
+                double vrotation[3];
+
+                velocity.x = get_log_data(sim_log, i * log_step)[j].motion.velocity.x;
+                velocity.y = get_log_data(sim_log, i * log_step)[j].motion.velocity.y;
+                velocity.z = get_log_data(sim_log, i * log_step)[j].motion.velocity.z;
+
+                vrot = rotate_z_up(velocity, degrees.z, degrees.x);
+
+                depth = -result.z;
+
+                /*
                 // depth and slope for planes
                 if (plane == XY)
                 {
-                    depth = -1 * (get_log_data(sim_log, i * log_step)[j].motion.position.z);
-
+                    //depth = -1 * (get_log_data(sim_log, i * log_step)[j].motion.position.z);
+                    depth = -1 * rotated[2];
                     vx = get_log_data(sim_log, i * log_step)[j].motion.velocity.x;
                     vy = get_log_data(sim_log, i * log_step)[j].motion.velocity.y;
 
@@ -538,6 +565,7 @@ void render_objects_advanced(Object *sim_log, int time_seconds, int start, int e
 
                 }
 
+                */
 
                 if (!closest_initialised)
                 {
@@ -555,9 +583,9 @@ void render_objects_advanced(Object *sim_log, int time_seconds, int start, int e
 
 
 
-                if (fabs(vx) < 1e-6)
-                    vx = 1e-6; // avoid division by zero
-                ratio = vy / (vx + 1.0);
+                if (fabs(vrot.x) < 1e-6)
+                    vrot.x = 1e-6; // avoid division by zero
+                ratio = vrot.y / (vrot.x + 1.0);
 
                 if (ratio > 4.0)
                 {
@@ -583,6 +611,9 @@ void render_objects_advanced(Object *sim_log, int time_seconds, int start, int e
             }
         }
     }
+
+
+
 
     for (int y = 0; y < NO_PIXELSY; y++)
     {
@@ -639,30 +670,23 @@ void render_objects_advanced(Object *sim_log, int time_seconds, int start, int e
     }
 }
 
-void render_objects_over_time(Object *sim_log, int start, int end)
+// interactive version of the advanced renderer at a snapshot
+char render_interactive(Object *sim_log, int time_seconds, bool have_time_control)
 {
-    int time_seconds;
-    int i = (start / render_step);
-
     // plane hud's
     char *hud_XY = "[ VIEW: 0 XY ( * ) | 1 YZ ( 90*> r90*< ) | 2 XZ ( 90*v ) ]";
     char *hud_YZ = "[ VIEW: 0 XY ( 90*^ r90*< ) | 1 YZ ( * ) | 2 XZ ( 90*< ) ]";
     char *hud_XZ = "[ VIEW: 0 XY ( 90*^ ) | 1 YZ ( 90*> ) | 2 XZ ( * ) ]";
     char *plane_hud;
 
-    char input;
-    clear_input_buffer();
+    double extra_move = 1;
+    char input_str[32];
 
-    bool go_back = false;
-    bool paused = false;
 
-    while (i < (end / render_step) + 1)
+
+    while (1)
     {
-        char input_str[32];
-        time_seconds = i * render_step;
-        // render_objects(get_log_data(sim_log, time_seconds), time_seconds, plane, zoom);
-
-        render_objects_advanced(sim_log, time_seconds, start, end);
+        render_objects_static(sim_log, time_seconds);
 
         // change hud based on plane
         switch (plane)
@@ -678,65 +702,339 @@ void render_objects_over_time(Object *sim_log, int start, int end)
             break;
         }
 
-        printf("[ TIME: ENTER > | b < ]   [ ZOOM: - | z0 | + ]   %s   [ QUIT ]", plane_hud);
-        printf("\nCOMMAND: ");
+        if (have_time_control)
+            printf("[ TIME: ENTER > | b < ]   ");
 
-        if (render_wait)
+        printf("[ ZOOM: - | z0 | + ]   %s   [ QUIT ]", plane_hud);
+        printf("\nSPIN: %lf PITCH %lf", degrees.z, degrees.x);
+
+        if (fgets(input_str, sizeof(input_str), stdin) == NULL)
+            return '1';
+
+        // Remove newline if present
+        input_str[strcspn(input_str, "\n")] = 0;
+        if(strlen(input_str) == 0)
         {
-            if (fgets(input_str, sizeof(input_str), stdin) == NULL)
-                return;
-
-            // Remove newline if present
-            input_str[strcspn(input_str, "\n")] = 0;
-
-            if (strcmp(input_str, "b") == 0)
-            {
-                go_back = true;
-            }
-            else if (strcmp(input_str, "+") == 0)
-            {
-                paused = true;
-                zoom *= 2;
-            }
-            else if (strcmp(input_str, "-") == 0)
-            {
-                paused = true;
-                zoom /= 2;
-            }
-            else if (input_str[0] == 'z')
-            {
-                zoom = pow(2, atoi(input_str + 1));
-            }
-            else if (strcmp(input_str, "0") == 0 || strcmp(input_str, "1") == 0 || strcmp(input_str, "2") == 0)
-            {
-                paused = true;
-                plane = input_str[0] - '0';
-            }
-            else if (strcmp(input_str, "q") == 0)
-            {
-                return;
-            }
-            else
-            {
-                // Unrecognized input
-            }
+            if(have_time_control)
+                return '>';
         }
-
-        if (go_back)
+        else if (strcmp(input_str, "b") == 0)
         {
-            i--;
-            go_back = false;
+            if(have_time_control)
+                return '<';
         }
-        else if (!paused)
+        else if (strcmp(input_str, "+") == 0)
         {
-            i++;
+            zoom *= 2;
+        }
+        else if (strcmp(input_str, "-") == 0)
+        {
+            zoom /= 2;
+        }
+        else if (input_str[0] == 'p')
+        {
+            //zoom = pow(2, atoi(input_str + 1));
+        }
+        else if (strcmp(input_str, "0") == 0 || strcmp(input_str, "1") == 0 || strcmp(input_str, "2") == 0)
+        {
+            plane = input_str[0] - '0';
+        }
+        else if (strcmp(input_str, "i") == 0)
+        {
+            display_all_information(get_log_data(sim_log, time_seconds));
+            getchar();
+        }
+        else if(input_str[0] == 'w')
+        {
+
+            
+            if(strlen(input_str) > 1)
+            {
+                extra_move = atoi(input_str + 1);
+            }
+
+            cameraY += extra_move / zoom;
+            /*
+            Vec3 m = pan_camera_relative(0, 1, extra_move * calculate_resolution());
+            view_offsetX -= m.x;
+            view_offsetY -= m.y;
+            view_offsetZ -= m.z;
+            */
+
+            /*
+            if (plane == XY)
+                view_offsetY -= extra_move * calculate_resolution();
+            if (plane == YZ)
+                view_offsetZ -= extra_move * calculate_resolution();
+            if (plane == XZ)
+                view_offsetZ -= extra_move * calculate_resolution();
+            */
+        }
+        else if(input_str[0] == 's')
+        {
+
+            if(strlen(input_str) > 1)
+            {
+                extra_move = atoi(input_str + 1);
+            }
+
+
+            cameraY -= extra_move / zoom;
+
+            /*
+            Vec3 m = pan_camera_relative(0, -1, extra_move * calculate_resolution());
+            view_offsetX -= m.x;
+            view_offsetY -= m.y;
+            view_offsetZ -= m.z;
+            */
+
+
+
+
+            /*
+            if (plane == XY)
+                view_offsetY += extra_move * calculate_resolution();
+            if (plane == YZ)
+                view_offsetZ += extra_move * calculate_resolution();
+            if (plane == XZ)
+                view_offsetZ += extra_move * calculate_resolution();
+            */
+        }
+        else if(input_str[0] == 'd')
+        {
+            if(strlen(input_str) > 1)
+            {
+                extra_move = atoi(input_str + 1);
+            }
+
+            cameraX -= extra_move / zoom;
+            /*
+            Vec3 m = pan_camera_relative(1, 0, extra_move * calculate_resolution());
+            view_offsetX -= m.x;
+            view_offsetY -= m.y;
+            view_offsetZ -= m.z;
+            */
+
+
+
+            /*
+            if (plane == XY)
+                view_offsetX -= extra_move * calculate_resolution();
+            if (plane == YZ)
+                view_offsetY -= extra_move * calculate_resolution();
+            if (plane == XZ)
+                view_offsetX -= extra_move * calculate_resolution();
+            */
+        }
+        else if(input_str[0] == 'a')
+        {
+
+            if(strlen(input_str) > 1)
+            {
+                extra_move = atoi(input_str + 1);
+            }
+
+            cameraX += extra_move / zoom;
+
+
+
+
+            /*
+             Vec3 m = pan_camera_relative(-1, 0, extra_move * calculate_resolution());
+            view_offsetX -= m.x;
+            view_offsetY -= m.y;
+            view_offsetZ -= m.z;
+            */
+
+            /*
+            if (plane == XY)
+                view_offsetX += extra_move * calculate_resolution();
+            if (plane == YZ)
+                view_offsetY += extra_move * calculate_resolution();
+            if (plane == XZ)
+                view_offsetX += extra_move * calculate_resolution();
+            */
+        }
+        else if(input_str[0] == 'x')
+        {
+            if(strlen(input_str) > 1)
+            {
+                degrees.x += atoi(input_str + 1);
+            }
+
+        }
+        else if(input_str[0] == 'y')
+        {
+            if(strlen(input_str) > 1)
+            {
+                degrees.y += atoi(input_str + 1);
+            }
+
+        }
+        else if(input_str[0] == 'z')
+        {
+            if(strlen(input_str) > 1)
+            {
+                degrees.z += atoi(input_str + 1);
+            }
+
+        }
+        else if (strcmp(input_str, "q") == 0)
+        {
+            return '0';
         }
         else
         {
-            paused = false;
+            // Unrecognized input
         }
+
+        extra_move = 1;
     }
 }
+
+// interactive version of the advanced renderer over time
+void render_objects_playback(Object *sim_log, int start, int end)
+{
+    int i = (start / render_step);
+    char return_code;
+
+    while (i < (end / render_step) + 1)
+    {
+        return_code = render_interactive(sim_log, i * render_step, true);
+
+        switch (return_code)
+        {
+        case '0':
+            return;
+
+        case '>':
+            i++;
+            break;
+        
+        case '<':
+            i--;
+            break;
+
+        default:
+            break;
+        }
+
+    }
+
+}
+
+void rotate_point(double result[3], Vec3 point, Vec3 angles_degrees)
+{
+    // Convert to radians
+    double ax = angles_degrees.x * M_PI / 180.0;
+    double ay = angles_degrees.y * M_PI / 180.0;
+    double az = angles_degrees.z * M_PI / 180.0;
+
+    // Precompute cos/sin for each angle
+    double cx = cos(ax), sx = sin(ax);
+    double cy = cos(ay), sy = sin(ay);
+    double cz = cos(az), sz = sin(az);
+
+    // --- Rotate around X axis ---
+    double y1 = point.y * cx - point.z * sx;
+    double z1 = point.y * sx + point.z * cx;
+
+    // --- Rotate around Y axis ---
+    double x2 = point.x * cy + z1 * sy;
+    double z2 = -point.x * sy + z1 * cy;
+
+    // --- Rotate around Z axis ---
+    double x3 = x2 * cz - y1 * sz;
+    double y3 = x2 * sz + y1 * cz;
+
+    // Return only the projected X, Y (for rendering)
+    result[0] = x3;
+    result[1] = y3;
+    result[2] = z2;
+}
+
+Vec3 rotate_point_2d(Vec3 p, double angle_degrees)
+{
+    double a = angle_degrees * (M_PI / 180.0); // convert deg → rad
+    double cs = cos(a);
+    double sn = sin(a);
+
+    Vec3 r;
+    r.x = p.x * cs - p.y * sn;
+    r.y = p.x * sn + p.y * cs;
+    return r;
+}
+
+Vec3 rotate_z_up(Vec3 v, double spin_deg, double pitch_deg)
+{
+    double spin  = spin_deg * (M_PI / 180.0);
+    double pitch = pitch_deg * (M_PI / 180.0);
+
+    double cs = cos(spin);
+    double ss = sin(spin);
+    double cp = cos(pitch);
+    double sp = sin(pitch);
+
+     // --- Rotate around world Z (spin/yaw) ---
+    double x1 = cs * v.x - ss * v.y;
+    double y1 = ss * v.x + cs * v.y;
+    double z1 = v.z;
+
+    // --- Rotate around local X (pitch) ---
+    double y2 = cp * y1 - sp * z1;
+    double z2 = sp * y1 + cp * z1;
+    double x2 = x1;
+
+    Vec3 out = {x2, y2, z2};
+    return out;
+}
+
+Vec3 rotate_z_up_pivot(Vec3 v, Vec3 pivot, double spin_deg, double pitch_deg)
+{
+    double spin  = spin_deg * (M_PI / 180.0);
+    double pitch = pitch_deg * (M_PI / 180.0);
+
+    double cs = cos(spin);
+    double ss = sin(spin);
+    double cp = cos(pitch);
+    double sp = sin(pitch);
+
+    // Translate so pivot is origin
+    double x = v.x - pivot.x;
+    double y = v.y - pivot.y;
+    double z = v.z - pivot.z;
+
+    // --- Rotate around world Z (spin/yaw) ---
+    double x1 = cs * x - ss * y;
+    double y1 = ss * x + cs * y;
+    double z1 = z;
+
+    // --- Rotate around local X (pitch) ---
+    double y2 = cp * y1 - sp * z1;
+    double z2 = sp * y1 + cp * z1;
+    double x2 = x1;
+
+    // Translate back to world space
+    Vec3 out = { x2 + pivot.x, y2 + pivot.y, z2 + pivot.z };
+    return out;
+}
+
+
+Vec3 pan_camera_relative(double dx, double dy, double move)
+{
+    Vec3 local;
+    local.x = dx * move;
+    local.y = dy * move;
+    local.z = 0;
+
+    // invert rotation (negative spin & pitch)
+    Vec3 world = rotate_z_up(local, -degrees.z, -degrees.x);
+
+    return world;
+}
+
+
+
 
 /*
     utility
@@ -780,19 +1078,28 @@ char *display_time(int time_seconds)
 char *format_number(double number)
 {
     static char number_str[60];
-    if (number >= 1e15)
+    if (fabs(number) >= 1e15)
         snprintf(number_str, sizeof(number_str), "%.3e", number);
-    else if (number >= 1e12)
+    else if (fabs(number) >= 1e12)
         snprintf(number_str, sizeof(number_str), "%.2f T", number / 1e12);
-    else if (number >= 1e9)
+    else if (fabs(number) >= 1e9)
         snprintf(number_str, sizeof(number_str), "%.2f B", number / 1e9);
-    else if (number >= 1e6)
+    else if (fabs(number) >= 1e6)
         snprintf(number_str, sizeof(number_str), "%.2f M", number / 1e6);
     else
         snprintf(number_str, sizeof(number_str), "%.0f", number);
 
     return number_str;
 }
+
+double calculate_resolution()
+{
+    int half_screen_sizeX = NO_PIXELSX / 2;
+
+    return ((double)RENDER_SIZE / half_screen_sizeX) / zoom;
+
+}
+
 
 // displays the position of a given object
 void display_position(Object object)
@@ -822,19 +1129,19 @@ void display_all_information(Object objects[])
         printf("\nkg: %s", format_number(objects[i].mass));
 
         printf("\n\nPosition:");
-        printf("\nx: %s", format_number(objects[i].motion.position.x));
-        printf("\ny: %s", format_number(objects[i].motion.position.y));
-        printf("\nz: %s", format_number(objects[i].motion.position.z));
+        printf("\nx: %s m", format_number(objects[i].motion.position.x));
+        printf("\ny: %s m", format_number(objects[i].motion.position.y));
+        printf("\nz: %s m", format_number(objects[i].motion.position.z));
 
         printf("\n\nVelocity:");
-        printf("\nx: %s", format_number(objects[i].motion.velocity.x));
-        printf("\ny: %s", format_number(objects[i].motion.velocity.y));
-        printf("\nz: %s", format_number(objects[i].motion.velocity.z));
+        printf("\nx: %s m/s", format_number(objects[i].motion.velocity.x));
+        printf("\ny: %s m/s", format_number(objects[i].motion.velocity.y));
+        printf("\nz: %s m/s", format_number(objects[i].motion.velocity.z));
 
         printf("\n\nForce:");
-        printf("\nx: %s", format_number(objects[i].motion.force.x));
-        printf("\ny: %s", format_number(objects[i].motion.force.y));
-        printf("\nz: %s\n\n", format_number(objects[i].motion.force.z));
+        printf("\nx: %s N", format_number(objects[i].motion.force.x));
+        printf("\ny: %s N", format_number(objects[i].motion.force.y));
+        printf("\nz: %s N\n\n", format_number(objects[i].motion.force.z));
     }
 };
 
@@ -909,8 +1216,8 @@ int simulation_ui(Object *sim_log, Object initial_objects[], Object objects[])
         {
 
         case 1:
-            render_objects_advanced(sim_log, 0, 0, 0);
-            display_all_information(&sim_log[0 * NO_OBJECTS]);
+            render_interactive(sim_log, 0, false);
+            //render_objects_static(sim_log, 0, 0, time_scale);
             break;
 
         case 2:
@@ -940,8 +1247,10 @@ int simulation_ui(Object *sim_log, Object initial_objects[], Object objects[])
             printf("\nEnd: ");
             scanf("%d %d %d", &days, &hours, &minutes);
             time_seconds_end = (days * DAY) + (hours * HOUR) + (minutes * MINUTE);
+            clear_input_buffer();
 
-            render_objects_over_time(sim_log, time_seconds_start, time_seconds_end);
+            //render_objects_playback(sim_log, time_seconds_start, time_seconds_end);
+            render_objects_playback(sim_log, time_seconds_start, time_seconds_end);
             break;
 
         default:
