@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <windows.h>
 
+#define FRAME_BUFFER_SIZE 20000
+
 // time units in seconds
 #define MINUTE (60)
 #define HOUR (MINUTE * 60)
@@ -49,7 +51,7 @@ double cameraY = 0;
 
 
 
-int view_focused_object = 1;      // what object is the view focused on
+int view_focused_object = 0;      // what object is the view focused on
 int motion_relative_to_object = 0; // what object is the view focused on; // displays motion relative to this object
 
 
@@ -100,7 +102,7 @@ typedef struct
 
 
 
-#define FRAME_BUFFER_SIZE (NO_PIXELSX * NO_PIXELSY)
+
 Camera camera = {
     .pivot_position = {0.0f, 0.0f, 0.0f},
     .zoom = 1.0,
@@ -614,7 +616,7 @@ void render_objects_static(Object *sim_log, int time_seconds)
         }
     }
     
-    char frame[FRAME_BUFFER_SIZE];
+    char frame[1];
     int idx = 0;
 
     // Clear & home ANSI codes
@@ -872,7 +874,7 @@ void render_objects_playback(Object *sim_log, int start, int end)
 
 void rotate_render(Object *sim_log, int time_seconds)
 {
-    for (int i = 0; i < 360; i+= 10)
+    for (int i = 0; i < 360; i+= 5)
     {
         render_objects_static(sim_log, time_seconds);
         degrees.z += 5;
