@@ -101,8 +101,6 @@ typedef struct
 
 
 
-
-
 Camera camera = {
     .pivot_position = {0.0f, 0.0f, 0.0f},
     .zoom = 1.0,
@@ -410,25 +408,20 @@ void simulate(Object *sim_log, Object initial_objects[], Object objects[], int t
 // renders all the objects in ASCII in a given area
 void render_objects_static(Object *sim_log, int time_seconds)
 {
-    //camera.angular_resolution_x = 2 * atan((camera.view_size / camera.no_pixelsX) / camera.view_size);
+    //camera.angular_resolution_x = 2 * atan((1.07e9 / camera.no_pixelsX) / camera.view_size);
     camera.angular_resolution_x = 2 * atan(1.0 / camera.no_pixelsX);
     camera.angular_resolution_y = camera.angular_resolution_x * ((double)camera.no_pixelsX / camera.no_pixelsY);
 
     camera.pixel_size_x = camera.view_size / camera.no_pixelsX;
     camera.pixel_size_y = camera.view_size / camera.no_pixelsY;
 
+    printf("pixelsizeX: %lf", camera.pixel_size_x);
     Vec3 focused_object_offset = (Vec3){0.0f, 0.0f, 0.0f};
 
 
     // number of pixels from the middle to the end
     int half_screen_sizeX = camera.no_pixelsX / 2;
     int half_screen_sizeY = camera.no_pixelsY / 2;
-
-    //double pixel_sizeX = (camera.view_size / (camera.no_pixelsX ));
-    //double pixel_sizeY = (camera.view_size / (camera.no_pixelsY ));
-
-    camera.pixel_size_x = camera.view_size / camera.no_pixelsX;
-    camera.pixel_size_y = camera.view_size / camera.no_pixelsY;
 
     char *plane_str;
     Vec3 display_pixel[NO_OBJECTS];
@@ -488,7 +481,6 @@ void render_objects_static(Object *sim_log, int time_seconds)
 
         depth_ratio_x = camera.angular_resolution_x / object_angle_size_x;
         depth_ratio_y = camera.angular_resolution_y / object_angle_size_y;
-        
 
         if (depth_ratio_x > 0 && depth_ratio_y > 0)
         {
